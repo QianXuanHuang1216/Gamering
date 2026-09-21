@@ -387,3 +387,71 @@ a { color: var(--md-sys-color-primary); }
 /* 确认输入框（取消二次确认用） */
 .confirm-check { display: flex; align-items: flex-start; gap: 12px; min-height: 48px; font-size: 14px; line-height: 20px; }
 .confirm-check input { width: 24px; height: 24px; flex: none; accent-color: var(--md-sys-color-error); margin: 0; }
+
+/* ---- SPA-506：两层评论（mock 为准，只用现有 token） ---- */
+[hidden] { display: none !important; }
+.comment-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 0; }
+.comment-l1 { display: flex; gap: 12px; padding: 12px 0; }
+.comment-l1-group + .comment-l1-group { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.comment-body { flex: 1; min-width: 0; display: grid; gap: 4px; align-content: start; }
+.comment-meta { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.comment-meta .who { font-size: 14px; line-height: 20px; font-weight: 500; }
+.comment-meta time { font-size: 12px; line-height: 16px; color: var(--md-sys-color-on-surface-variant); }
+.comment-edited { font-size: 12px; line-height: 16px; color: var(--md-sys-color-on-surface-variant); font-style: normal; }
+.comment-text { font-size: 16px; line-height: 24px; margin: 0; overflow-wrap: break-word; white-space: pre-wrap; }
+.comment-text.clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.comment-actions { display: flex; gap: 4px; align-items: center; }
+.comment-actions button { min-height: 48px; min-width: 48px; background: none; border: none; cursor: pointer;
+  color: var(--md-sys-color-on-surface-variant); font: inherit; font-size: 13px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: var(--md-sys-shape-small); }
+.comment-l2-wrap { margin-left: 44px; border-left: 2px solid var(--md-sys-color-outline-variant); padding-left: 12px;
+  display: grid; min-width: 0; }
+.comment-l2 { display: flex; gap: 10px; padding: 10px 0; }
+.comment-l2 + .comment-l2 { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.comment-composer { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; }
+.comment-composer .input { flex: 1; }
+.comment-composer .btn { flex: none; padding: 0 20px; min-height: 48px; }
+.comment-reply-context { display: flex; align-items: center; gap: 8px; background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container); border-radius: var(--md-sys-shape-small); padding: 8px 8px 8px 12px;
+  font-size: 13px; margin-top: 12px; }
+.comment-reply-context .spacer { flex: 1; }
+.comment-reply-context button { background: none; border: none; cursor: pointer; color: inherit; min-width: 48px; min-height: 48px; font-size: 16px; }
+.comment-deleted { color: var(--md-sys-color-on-surface-variant); font-size: 14px; font-style: italic; }
+.comment-skel-row { display: flex; gap: 12px; padding: 12px 0; }
+.login-strip { display: flex; align-items: center; gap: 8px; background: var(--md-sys-color-surface-container-highest);
+  border-radius: var(--md-sys-shape-small); padding: 12px; font-size: 14px; line-height: 20px; margin-top: 12px; }
+.chip-replyto { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: var(--md-sys-shape-full);
+  font-size: 12px; font-weight: 500; background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container); white-space: nowrap; }
+
+/* ---- SPA-506：编辑模式 ---- */
+.edit-cap-error { display: flex; gap: 8px; align-items: flex-start; background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container); border-radius: var(--md-sys-shape-small); padding: 12px;
+  font-size: 14px; line-height: 20px; }
+.edit-member-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; min-height: 56px; }
+.edit-member-row + .edit-member-row { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.edit-member-row .who { flex: 1; min-width: 0; }
+
+/* ---- SPA-506：M3 日期/时间选择器（只用现有 token，无外部日期库） ---- */
+.datetime-field-btn { width: 100%; display: flex; align-items: center; gap: 12px; background: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline); border-radius: 4px; color: var(--md-sys-color-on-surface);
+  font: inherit; font-size: 16px; line-height: 24px; padding: 12px 16px; cursor: pointer; text-align: left; min-height: 48px; }
+.datetime-field-btn .msr { color: var(--md-sys-color-on-surface-variant); }
+.datetime-field-btn .spacer { flex: 1; }
+.datetime-field-btn[aria-invalid="true"] { border-color: var(--md-sys-color-error); border-width: 2px; }
+.datepicker-dialog { background: var(--md-sys-color-surface-container-high); border-radius: var(--md-sys-shape-extra-large);
+  padding: 16px; width: 100%; max-width: 360px; }
+.datepicker-title { display: flex; align-items: center; gap: 8px; }
+.datepicker-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 12px; }
+.datepicker-dow { text-align: center; font-size: 12px; color: var(--md-sys-color-on-surface-variant); height: 40px;
+  display: flex; align-items: center; justify-content: center; }
+.datepicker-day { min-width: 40px; height: 40px; border-radius: 50%; border: none; background: none; color: inherit;
+  font: inherit; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.datepicker-day.selected { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); font-weight: 600; }
+.datepicker-day.today:not(.selected) { border: 1px solid var(--md-sys-color-primary); color: var(--md-sys-color-primary); }
+.datepicker-day:disabled { opacity: 0.38; cursor: default; }
+.timepicker-cols { display: flex; gap: 8px; margin-top: 12px; }
+.timepicker-col { flex: 1; display: grid; gap: 4px; max-height: 240px; overflow-y: auto; }
+.timepicker-col button { min-height: 48px; border-radius: var(--md-sys-shape-full); border: none; background: transparent;
+  color: inherit; font: inherit; font-size: 16px; cursor: pointer; }
+.timepicker-col button.selected { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); font-weight: 600; }

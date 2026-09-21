@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import EditBox from "./edit-box";
 
-/** 房主管理（§3 P3 结束/取消区分）：tonal 结束 vs error 取消 + 确认弹框 + Snackbar。op 逻辑不动。 */
-export default function ManageBox({ id, status }) {
+/** 房主管理（§3 P3 结束/取消区分 + SPA-506 编辑事件入口）：tonal 编辑/结束 vs error 取消。 */
+export default function ManageBox({ id, status, ev, participants }) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
   const [dialog, setDialog] = useState(null);
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   const terminal = status === "ended" || status === "cancelled";
 
   async function op(name) {
@@ -38,10 +40,28 @@ export default function ManageBox({ id, status }) {
 
   if (terminal) return <p className="t-body-medium">事件已终态（{status === "ended" ? "已结束" : "已取消"}）。</p>;
 
+  if (editing && ev) {
+    return (
+      <EditBox
+        id={id}
+        ev={ev}
+        participants={participants ?? []}
+        onDone={(m, keepOpen) => {
+          if (m && m !== "removed") setMsg(m);
+          if (!keepOpen) setEditing(false);
+          router.refresh();
+        }}
+      />
+    );
+  }
+
   return (
     <section className="card card-outlined" aria-label="房主管理" data-testid="manage-box">
       <h2 className="t-title-medium">房主管理</h2>
       <div className="row-wrap" style={{ marginTop: 12 }}>
+        <button type="button" className="btn btn-tonal" onClick={() => setEditing(true)}>
+          <span className="msr md-18">edit</span>编辑事件
+        </button>
         <button type="button" className="btn btn-tonal" onClick={() => { setDialog("end"); setAck(false); }}>
           <span className="msr md-18">stop</span>结束
         </button>

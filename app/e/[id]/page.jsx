@@ -10,6 +10,8 @@ import AvatarImg from "@/app/avatar-img";
 import PushBox from "./push-box";
 import ManageBox from "./manage-box";
 import DescBox from "./desc-box";
+import CommentsBox from "./comments-box";
+import { listComments, groupComments } from "@/lib/comments";
 
 /** SSR 直出 OG 标签当分享 fallback（§8，逻辑不动）。 */
 export async function generateMetadata({ params }) {
@@ -38,6 +40,8 @@ export default async function EventDetail({ params }) {
   const wall = participants.slice(0, 10);
   const heldSlots = Array.from({ length: Math.min(ev.held, Math.max(0, 10 - wall.length)) }, (_, i) => i);
   const extraCount = participants.length + ev.held - wall.length - heldSlots.length;
+  const terminal = status === "ended" || status === "cancelled";
+  const initialGroups = groupComments(listComments(getDb(), id));
 
   return (
     <main className="stack" data-testid="event-detail">
@@ -158,6 +162,15 @@ export default async function EventDetail({ params }) {
         </p>
       )}
 
+      {/* 讨论/评论卡：参加者卡之后、房主区之前（SPA-506 A） */}
+      <CommentsBox
+        eventId={ev.id}
+        meId={discordId}
+        creatorId={ev.creatorDiscordId}
+        terminal={terminal}
+        initialGroups={initialGroups}
+      />
+
       {/* 房主区：分割线隔开 */}
       {mine && (
         <>
@@ -165,7 +178,7 @@ export default async function EventDetail({ params }) {
           <div id="push">
             <PushBox id={ev.id} />
           </div>
-          <ManageBox id={ev.id} status={status} />
+          <ManageBox id={ev.id} status={status} ev={ev} participants={participants} />
         </>
       )}
     </main>
