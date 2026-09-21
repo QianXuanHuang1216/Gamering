@@ -6,6 +6,7 @@ import { loadEventView } from "@/lib/view";
 import { avatarUrl } from "@/lib/discord";
 import { relText } from "@/lib/present";
 import StatusBadge from "@/app/status-badge";
+import AvatarImg from "@/app/avatar-img";
 import PushBox from "./push-box";
 import ManageBox from "./manage-box";
 import DescBox from "./desc-box";
@@ -81,7 +82,7 @@ export default async function EventDetail({ params }) {
         <h2 className="t-title-medium">参加者（{participants.length + ev.held}）</h2>
         <div className="avatar-wall" style={{ marginTop: 12 }} aria-hidden={wall.length === 0 && heldSlots.length === 0}>
           {wall.map((p) => (
-            <img key={p.discordId} src={avatarUrl(p.discordId, p.avatarHash)} alt="" width={40} height={40} loading="lazy" />
+            <AvatarImg key={p.discordId} src={avatarUrl(p.discordId, p.avatarHash)} seed={p.discordId} alt="" size={40} />
           ))}
           {heldSlots.map((i) => (
             <img
@@ -128,7 +129,7 @@ export default async function EventDetail({ params }) {
             if (p.seat === "waitlisted") queueNo += 1;
             return (
               <li key={p.discordId}>
-                <img className="avatar" src={avatarUrl(p.discordId, p.avatarHash)} alt="" width={40} height={40} loading="lazy" />
+                <AvatarImg className="avatar" src={avatarUrl(p.discordId, p.avatarHash)} seed={p.discordId} alt="" size={40} />
                 <span className="who">
                   <div className="n">{p.username}</div>
                   <div className="s">@{p.username}</div>

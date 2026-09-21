@@ -4,6 +4,7 @@ import { readSession } from "@/lib/session";
 import { getDb, getUser } from "@/lib/db";
 import { avatarUrl } from "@/lib/discord";
 import AppNav from "./nav";
+import AvatarImg from "./avatar-img";
 
 export const metadata = { title: "Gamering", description: "Discord 组队事件" };
 
@@ -34,7 +35,7 @@ export default async function RootLayout({ children }) {
           <span className="spacer" />
           {user ? (
             <span className="topbar-user">
-              <img className="topbar-avatar" src={avatarUrl(user.discord_id, user.avatar_hash)} alt="" width={32} height={32} />
+              <AvatarImg className="topbar-avatar" src={avatarUrl(user.discord_id, user.avatar_hash)} seed={user.discord_id} alt="" size={32} />
               <span>{user.username}</span>
             </span>
           ) : (
