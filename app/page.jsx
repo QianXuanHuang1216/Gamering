@@ -1,5 +1,7 @@
 import { cookies } from "next/headers";
 import { readSession } from "@/lib/session";
+import { loginHref } from "@/lib/invite";
+import InviteCard from "./invite-card";
 
 export default async function Home({ searchParams }) {
   const params = await searchParams;
@@ -45,6 +47,23 @@ export default async function Home({ searchParams }) {
           </div>
         </div>
       )}
+      {/* SPA-499：主页常驻邀请卡（第二顺位，首屏可发现）。S0 服务端直渲；S1/S2/E 由客户端组件 fetch /api/guilds。 */}
+      <div className="card" id="invite" tabIndex={-1} data-testid="home-invite-card">
+        {!discordId ? (
+          <div className="empty" data-testid="home-invite-s0">
+            <span className="empty-illo">
+              <span className="msr">group_add</span>
+            </span>
+            <p className="t-title-medium">把 Gamering Bot 拉进你的服务器</p>
+            <p className="t-body-medium">先用 Discord 登录，回来继续邀请，上下文不丢</p>
+            <a className="btn btn-filled" href={loginHref("/?invite=1")}>
+              <span className="msr md-18">login</span>登录后邀请 Bot
+            </a>
+          </div>
+        ) : (
+          <InviteCard />
+        )}
+      </div>
     </main>
   );
 }

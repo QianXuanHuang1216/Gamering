@@ -1,7 +1,14 @@
 import { newOAuthState, OAUTH_STATE_COOKIE } from "@/lib/session";
+import { isSafeNextPath } from "@/lib/invite";
 
-export async function GET() {
-  const state = newOAuthState();
+export async function GET(req) {
+  const rawNext = new URL(req.url).searchParams.get("next");
+  const rand = newOAuthState();
+  // next 透传进 state（Discord 原样回传），白名单校验防开放重定向
+  const state =
+    rawNext && isSafeNextPath(rawNext)
+      ? `${rand}.${Buffer.from(rawNext).toString("base64url")}`
+      : rand;
   const params = new URLSearchParams({
     client_id: process.env.DISCORD_CLIENT_ID,
     redirect_uri: `${process.env.SITE_URL}/api/auth/callback/discord`,

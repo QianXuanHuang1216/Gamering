@@ -1,5 +1,6 @@
 import { getDb, upsertUser } from "@/lib/db";
 import { signSession, sessionCookie, OAUTH_STATE_COOKIE } from "@/lib/session";
+import { resolveNext } from "@/lib/invite";
 
 async function discord(path, token, init = {}) {
   const res = await fetch(`https://discord.com/api/v10${path}`, {
@@ -8,6 +9,16 @@ async function discord(path, token, init = {}) {
   });
   if (!res.ok) throw new Error(`discord ${path}: ${res.status}`);
   return res.json();
+}
+
+function nextFromState(state) {
+  const dot = (state ?? "").indexOf(".");
+  if (dot < 0) return null;
+  try {
+    return Buffer.from(state.slice(dot + 1), "base64url").toString();
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(req) {
@@ -44,12 +55,18 @@ export async function GET(req) {
     refreshToken: tok.refresh_token ?? null,
     tokenExpiresAt: tok.expires_in ? Date.now() + tok.expires_in * 1000 : null,
   });
+  // 登录不丢上下文：state 后缀即 next（白名单校验，默认回 /me），同时清掉 oauth state cookie
+  const next = resolveNext(nextFromState(state), "/me");
   const res = new Response(null, {
     status: 302,
     headers: {
-      Location: `${process.env.SITE_URL}/me`,
+      Location: `${process.env.SITE_URL}${next}`,
       "Set-Cookie": sessionCookie(signSession(me.id)),
     },
   });
+  res.headers.append(
+    "Set-Cookie",
+    `${OAUTH_STATE_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+  );
   return res;
 }

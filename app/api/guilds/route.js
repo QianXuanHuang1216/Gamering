@@ -15,8 +15,11 @@ export async function GET(req) {
 
   const managed = manageableIds(mine.data);
   const botIds = new Set((bot.data ?? []).map((g) => g.id));
+  const seen = new Set();
   const guilds = (mine.data ?? [])
     .filter((g) => managed.has(g.id) && botIds.has(g.id))
+    .filter((g) => (seen.has(g.id) ? false : (seen.add(g.id), true)))
     .map((g) => ({ id: g.id, name: g.name, icon: g.icon }));
-  return Response.json({ guilds, invite_url: guilds.length === 0 ? botInviteLink() : null });
+  // SPA-499 P2 注记：常返 invite_url（S2 前端直接复用，不再自行重建，避免两处拼参数分叉）
+  return Response.json({ guilds, invite_url: botInviteLink() });
 }
