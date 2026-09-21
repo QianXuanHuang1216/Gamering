@@ -120,9 +120,13 @@ export default async function EventDetail({ params }) {
                 title="占位（无 Discord 身份）"
               />
               <span className="who">
-                <div className="n">占位 {i + 1}</div>
+                {/* P2-5：占位行名用 on-surface-variant，一眼可辨真人 vs 占位（真人行名默认 on-surface）。 */}
+                <div className="n" style={{ color: "var(--md-sys-color-on-surface-variant)" }}>
+                  占位 {i + 1}
+                </div>
                 <div className="s">占位（无 Discord 身份）</div>
               </span>
+              <span className="chip-label">占位</span>
             </li>
           ))}
           {participants.map((p) => {

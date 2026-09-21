@@ -5,6 +5,7 @@ import { getDb, getUser } from "@/lib/db";
 import { avatarUrl } from "@/lib/discord";
 import AppNav from "./nav";
 import AvatarImg from "./avatar-img";
+import TopbarScrolled from "./topbar-scrolled";
 
 export const metadata = { title: "Gamering", description: "Discord 组队事件" };
 
@@ -28,6 +29,7 @@ export default async function RootLayout({ children }) {
         />
       </head>
       <body>
+        <TopbarScrolled />
         <header className="app-topbar" data-testid="topbar">
           <a className="brand" href="/">
             Gamering

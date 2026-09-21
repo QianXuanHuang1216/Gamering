@@ -359,6 +359,8 @@ a { color: var(--md-sys-color-primary); }
 @media (min-width: 600px) {
   .scrim { align-items: center; padding: 24px; }
   .sheet { max-width: 560px; border-radius: var(--md-sys-shape-extra-large); padding: 24px; }
+  /* P2-4：桌面为 M3 dialog，无 grab handle（只有 compact 底部表有）。 */
+  .sheet .grab { display: none; }
 }
 .dialog-danger-strip {
   background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container);

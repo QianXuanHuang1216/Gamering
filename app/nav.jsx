@@ -11,6 +11,8 @@ export default function AppNav({ loggedIn }) {
     { href: "/events/new", icon: "add_circle", label: "建事件", current: isNew },
     { href: "/me", icon: "event_list", label: "我的事件", current: isMe },
   ];
+  // P2-2（设计注记）：未登录无底导航是既定设计——顶栏已有登录按钮兜底，
+  // 访客去 Discord 频道点"参加"（网页不设参加按钮），故此处直接 return null。
   if (!loggedIn) return null;
   return (
     <>
