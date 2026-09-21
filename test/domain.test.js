@@ -108,14 +108,14 @@ describe("卡片 payload §7：解耦 + 终态禁用", () => {
     assert.equal(p.components[0].type, 17);
     return p.components[0].components;
   };
-  it("结构：单 Container 包裹（accent 挂 container 上）", () => {
+  it("结构：单 Container 包裹（accent_color 挂 container 上）", () => {
     const p = buildCardPayload({ ...base, status: "scheduled" }, "https://site");
-    assert.equal(p.components[0].accent, 5793266);
+    assert.equal(p.components[0].accent_color, 5793266);
   });
   it("满员 live：accent 保持绿，只追加橙色排队行", () => {
     const p = buildCardPayload({ ...base, status: "live" }, "https://site");
     assert.equal(p.flags, COMPONENTS_V2_FLAG);
-    assert.equal(p.components[0].accent, 5763719);
+    assert.equal(p.components[0].accent_color, 5763719);
     assert.ok(inner(p).some((c) => c.content?.includes("已满员")));
   });
   it("终态：accent 灰 + 参加/退出 disabled，Link 可点", () => {
