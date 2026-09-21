@@ -1,86 +1,236 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GAME_PRESETS } from "@/lib/games";
 
 const CUSTOM = "自定义…";
 
+/** P1 建事件页（design-spec §3 P1）：表单卡 + Sticky 操作条 + Snackbar。逻辑不动。 */
 export default function NewEvent() {
   const router = useRouter();
   const [err, setErr] = useState("");
+  const [needsLogin, setNeedsLogin] = useState(false);
   const [preset, setPreset] = useState(GAME_PRESETS[0]);
   const [custom, setCustom] = useState("");
+  const [customTouched, setCustomTouched] = useState(false);
   const [form, setForm] = useState({ start_at: "", end_at: "", cap: 5, held: 0, description: "" });
+  const [endOn, setEndOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [createdId, setCreatedId] = useState(null);
+
+  const startPast = useMemo(() => {
+    if (!form.start_at) return false;
+    return new Date(form.start_at).getTime() < Date.now();
+  }, [form.start_at]);
+  const endInvalid = useMemo(() => {
+    if (!endOn || !form.end_at || !form.start_at) return false;
+    return new Date(form.end_at).getTime() <= new Date(form.start_at).getTime();
+  }, [endOn, form.end_at, form.start_at]);
+  const customInvalid = preset === CUSTOM && custom.trim() === "";
+  const canSubmit = !busy && !startPast && !endInvalid && !customInvalid && !!form.start_at;
 
   async function submit(e) {
     e.preventDefault();
+    if (!canSubmit) return;
     setErr("");
+    setBusy(true);
     const gameText = preset === CUSTOM ? custom.trim() : preset;
-    const res = await fetch("/api/events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...form,
-        game_text: gameText,
-        cap: Number(form.cap),
-        held: Number(form.held),
-        start_at: new Date(form.start_at).toISOString(),
-        end_at: form.end_at ? new Date(form.end_at).toISOString() : null,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setErr(data.error ?? "创建失败");
-      return;
+    try {
+      const res = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          game_text: gameText,
+          cap: Number(form.cap),
+          held: Number(form.held),
+          start_at: new Date(form.start_at).toISOString(),
+          end_at: endOn && form.end_at ? new Date(form.end_at).toISOString() : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === "login_required") setNeedsLogin(true);
+        else setErr(data.error ?? "创建失败");
+        return;
+      }
+      setCreatedId(data.event.id);
+    } catch {
+      setErr("网络失败，请重试");
+    } finally {
+      setBusy(false);
     }
-    router.push(`/e/${data.event.id}`);
   }
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number.isNaN(Number(v)) ? lo : Number(v)));
+
+  if (needsLogin) {
+    return (
+      <main className="stack">
+        <h1 className="t-headline-medium">建事件</h1>
+        <div className="card">
+          <div className="empty" data-testid="login-empty">
+            <span className="empty-illo">
+              <span className="msr">login</span>
+            </span>
+            <p className="t-title-medium">建事件需要先登录</p>
+            <p className="t-body-medium">用 Discord 登录后即可创建事件并推送到群。</p>
+            <a className="btn btn-filled" href="/api/auth/login">
+              <span className="msr md-18">login</span>用 Discord 登录
+            </a>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main>
-      <h1>建事件</h1>
-      {err && <p style={{ color: "red" }}>{err}</p>}
-      <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
-        <label>
-          游戏（预设英文名 + 自定义）
-          <select value={preset} onChange={(e) => setPreset(e.target.value)} style={{ width: "100%" }}>
+    <main className="stack">
+      <h1 className="t-headline-medium">建事件</h1>
+      <form onSubmit={submit} className="card" style={{ display: "grid", gap: 16, padding: 16 }} data-testid="new-event-form">
+        <div className="field">
+          <span>游戏</span>
+          <select className="select" value={preset} onChange={(e) => setPreset(e.target.value)} aria-label="游戏预设">
             {GAME_PRESETS.map((g) => (
-              <option key={g} value={g}>{g}</option>
+              <option key={g} value={g}>
+                {g}
+              </option>
             ))}
             <option value={CUSTOM}>{CUSTOM}</option>
           </select>
-        </label>
+        </div>
         {preset === CUSTOM && (
-          <label>
-            自定义游戏名（英文，≤80 字）
-            <input value={custom} onChange={(e) => setCustom(e.target.value)} maxLength={80} placeholder="Helldivers 2" required style={{ width: "100%" }} />
-          </label>
+          <div className="field">
+            <span>自定义游戏名（英文，≤80 字）</span>
+            <input
+              className="input"
+              value={custom}
+              onChange={(e) => {
+                setCustom(e.target.value);
+                setCustomTouched(true);
+              }}
+              maxLength={80}
+              placeholder="Helldivers 2"
+              aria-invalid={customTouched && customInvalid}
+            />
+            {customTouched && customInvalid && <span className="field-error">请填写自定义游戏名</span>}
+          </div>
         )}
-        <label>
-          开始时间（必填）
-          <input type="datetime-local" value={form.start_at} onChange={set("start_at")} required />
-        </label>
-        <label>
-          结束时间（可选）
-          <input type="datetime-local" value={form.end_at} onChange={set("end_at")} />
-        </label>
-        <label>
-          人数上限（1–100）
-          <input type="number" value={form.cap} min={1} max={100} onChange={set("cap")} />
-        </label>
-        <label>
-          已有占位（无 Discord 身份的人数）
-          <input type="number" value={form.held} min={0} max={form.cap} onChange={set("held")} />
-        </label>
-        <label>
-          描述（≤2000 字，{form.description.length}/2000）
-          <textarea value={form.description} onChange={set("description")} maxLength={2000} rows={4} style={{ width: "100%" }} />
-        </label>
-        <button type="submit">创建事件</button>
+        <div className="field">
+          <span>开始时间（必填）</span>
+          <input
+            className="input"
+            type="datetime-local"
+            value={form.start_at}
+            onChange={set("start_at")}
+            aria-invalid={startPast}
+            aria-describedby="start-err"
+          />
+          {startPast && (
+            <span className="field-error" id="start-err">
+              开始时间不能早于现在
+            </span>
+          )}
+        </div>
+        <div className="field">
+          <div className="switch-row">
+            <input
+              className="switch"
+              type="checkbox"
+              id="end-switch"
+              checked={endOn}
+              onChange={(e) => setEndOn(e.target.checked)}
+            />
+            <label htmlFor="end-switch" className="t-label-large">
+              设置结束时间
+            </label>
+          </div>
+          <span className="hint">为空显示“待定”，结束后房主可手动结束。</span>
+          {endOn && (
+            <>
+              <input
+                className="input"
+                type="datetime-local"
+                value={form.end_at}
+                onChange={set("end_at")}
+                aria-invalid={endInvalid}
+                aria-describedby="end-err"
+              />
+              {endInvalid && (
+                <span className="field-error" id="end-err">
+                  结束时间必须晚于开始时间
+                </span>
+              )}
+            </>
+          )}
+        </div>
+        <div className="field">
+          <span>人数上限（1–100）</span>
+          <div className="stepper">
+            <button type="button" aria-label="减少人数上限" disabled={Number(form.cap) <= 1} onClick={() => setForm({ ...form, cap: clamp(Number(form.cap) - 1, 1, 100) })}>
+              −
+            </button>
+            <output>{form.cap}</output>
+            <button type="button" aria-label="增加人数上限" disabled={Number(form.cap) >= 100} onClick={() => setForm({ ...form, cap: clamp(Number(form.cap) + 1, 1, 100) })}>
+              ＋
+            </button>
+          </div>
+        </div>
+        <div className="field">
+          <span>已有占位</span>
+          <span className="hint">线下已组好、没有 Discord 的人数，会以默认头像占位显示。</span>
+          <div className="stepper">
+            <button type="button" aria-label="减少占位" disabled={Number(form.held) <= 0} onClick={() => setForm({ ...form, held: clamp(Number(form.held) - 1, 0, Number(form.cap)) })}>
+              −
+            </button>
+            <output>{form.held}</output>
+            <button type="button" aria-label="增加占位" disabled={Number(form.held) >= Number(form.cap)} onClick={() => setForm({ ...form, held: clamp(Number(form.held) + 1, 0, Number(form.cap)) })}>
+              ＋
+            </button>
+          </div>
+        </div>
+        <div className="field">
+          <span>描述</span>
+          <textarea
+            className="textarea"
+            value={form.description}
+            onChange={set("description")}
+            maxLength={2000}
+            rows={4}
+            placeholder="集合时间、语音频道、装备要求……"
+          />
+          <div className="counter">
+            {form.description.length}/2000
+          </div>
+        </div>
+        <div className="sticky-bar">
+          <button type="button" className="btn btn-text" onClick={() => router.back()}>
+            取消
+          </button>
+          <button type="submit" className="btn btn-filled" disabled={!canSubmit}>
+            {busy && <span className="spin" aria-hidden />}
+            创建事件
+          </button>
+        </div>
       </form>
+      {err && (
+        <div className="snackbar snackbar-error" role="alert" data-testid="error-snackbar">
+          {err}
+          <span className="spacer" />
+          <button className="snack-action" onClick={submit}>
+            重试
+          </button>
+        </div>
+      )}
+      {createdId && (
+        <div className="snackbar" role="status" data-testid="success-snackbar">
+          事件已创建，下一步推送到 Discord
+          <span className="spacer" />
+          <a href={`/e/${createdId}#push`}>去推送</a>
+        </div>
+      )}
     </main>
   );
 }
