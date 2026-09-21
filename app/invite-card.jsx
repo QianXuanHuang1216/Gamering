@@ -118,7 +118,7 @@ export default function InviteCard() {
             </a>
           )}
           <p className="t-label-medium" style={{ color: "var(--md-sys-color-on-surface-variant)" }}>
-            需要目标群的 Manage Server 权限才能拉 Bot；需要该群 Manage Server 权限，换个你是管理的群试试
+            需要该群 Manage Server 权限才能拉 Bot，换个你是管理的群试试
           </p>
         </div>
       )}
