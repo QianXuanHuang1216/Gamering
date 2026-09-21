@@ -1,3 +1,5 @@
+import "./globals.css";
+
 export const metadata = { title: "Gamering", description: "Discord 组队事件" };
 
 export default function RootLayout({ children }) {

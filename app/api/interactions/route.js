@@ -1,4 +1,4 @@
-import { getDb, getEvent, liveMessages, markMessageDead } from "@/lib/db";
+import { getDb, getEvent, liveMessages, markMessageDead, enqueueRetry } from "@/lib/db";
 import { cardPayload } from "@/lib/view";
 import {
   verifySignature,
@@ -44,7 +44,7 @@ export async function POST(req) {
   );
   void (async () => {
     try {
-      await fanout(db, { markMessageDead }, out.eventId, others, payload);
+      await fanout(db, { markMessageDead, enqueueRetry }, out.eventId, others, payload);
       if (out.note) {
         await ephemeralFollowup(process.env.DISCORD_CLIENT_ID, interaction.token, out.note);
       }

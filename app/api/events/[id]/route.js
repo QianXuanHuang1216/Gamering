@@ -1,6 +1,7 @@
-import { getDb, getEvent, endEvent, cancelEvent } from "@/lib/db";
+import { getDb, getEvent, endEvent, cancelEvent, liveMessages, markMessageDead, enqueueRetry } from "@/lib/db";
 import { readSession } from "@/lib/session";
-import { eventStatus } from "@/lib/view";
+import { eventStatus, cardPayload } from "@/lib/view";
+import { fanout } from "@/lib/discord-rest";
 
 export async function GET(_req, { params }) {
   const { id } = await params;
@@ -23,5 +24,8 @@ export async function PATCH(req, { params }) {
   else if (op === "cancel") cancelEvent(db, id);
   else return Response.json({ error: "unknown_op" }, { status: 400 });
   const next = getEvent(db, id);
+  // 终态即时翻灰：全量 payload 发所有活卡（按钮全禁用，仅 Link 可点）。
+  const payload = cardPayload(db, next, process.env.SITE_URL);
+  await fanout(db, { markMessageDead, enqueueRetry }, id, liveMessages(db, id), payload);
   return Response.json({ event: next, status: eventStatus(next) });
 }

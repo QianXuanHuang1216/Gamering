@@ -2,20 +2,27 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { GAME_PRESETS } from "@/lib/games";
+
+const CUSTOM = "自定义…";
 
 export default function NewEvent() {
   const router = useRouter();
   const [err, setErr] = useState("");
-  const [form, setForm] = useState({ game_text: "", start_at: "", end_at: "", cap: 5, held: 0, description: "" });
+  const [preset, setPreset] = useState(GAME_PRESETS[0]);
+  const [custom, setCustom] = useState("");
+  const [form, setForm] = useState({ start_at: "", end_at: "", cap: 5, held: 0, description: "" });
 
   async function submit(e) {
     e.preventDefault();
     setErr("");
+    const gameText = preset === CUSTOM ? custom.trim() : preset;
     const res = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
+        game_text: gameText,
         cap: Number(form.cap),
         held: Number(form.held),
         start_at: new Date(form.start_at).toISOString(),
@@ -38,9 +45,20 @@ export default function NewEvent() {
       {err && <p style={{ color: "red" }}>{err}</p>}
       <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
         <label>
-          游戏名（≤80 字）
-          <input value={form.game_text} onChange={set("game_text")} maxLength={80} required style={{ width: "100%" }} />
+          游戏（预设英文名 + 自定义）
+          <select value={preset} onChange={(e) => setPreset(e.target.value)} style={{ width: "100%" }}>
+            {GAME_PRESETS.map((g) => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+            <option value={CUSTOM}>{CUSTOM}</option>
+          </select>
         </label>
+        {preset === CUSTOM && (
+          <label>
+            自定义游戏名（英文，≤80 字）
+            <input value={custom} onChange={(e) => setCustom(e.target.value)} maxLength={80} placeholder="Helldivers 2" required style={{ width: "100%" }} />
+          </label>
+        )}
         <label>
           开始时间（必填）
           <input type="datetime-local" value={form.start_at} onChange={set("start_at")} required />

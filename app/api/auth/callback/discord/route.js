@@ -36,8 +36,14 @@ export async function GET(req) {
   }
   const tok = await tokenRes.json();
   const me = await discord("/users/@me", tok.access_token);
-  // guilds scope 预留：推送选群用（tracer 先存用户，选群走管理交集接口后续补）
-  upsertUser(getDb(), { discordId: me.id, username: me.username, avatarHash: me.avatar ?? null });
+  upsertUser(getDb(), {
+    discordId: me.id,
+    username: me.username,
+    avatarHash: me.avatar ?? null,
+    accessToken: tok.access_token,
+    refreshToken: tok.refresh_token ?? null,
+    tokenExpiresAt: tok.expires_in ? Date.now() + tok.expires_in * 1000 : null,
+  });
   const res = new Response(null, {
     status: 302,
     headers: {
