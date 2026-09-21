@@ -1,4 +1,4 @@
-import { getDb, getEvent } from "@/lib/db";
+import { getDb, getEvent, getUser } from "@/lib/db";
 import { readSession } from "@/lib/session";
 import { eventStatus } from "@/lib/view";
 import { listComments, groupComments, createComment, validateCommentBody } from "@/lib/comments";
@@ -26,11 +26,13 @@ export async function POST(req, { params }) {
   const bodyErr = validateCommentBody(b.body);
   if (bodyErr) return Response.json({ error: bodyErr }, { status: 400 });
   try {
+    // 展示名以服务端 session 为准，不信任客户端传入（防伪造）。
+    const authorUsername = getUser(db, me)?.username ?? me;
     const c = createComment(db, {
       eventId: id,
       parentId: b.parent_id ?? null,
       authorDiscordId: me,
-      authorUsername: String(b.username ?? me),
+      authorUsername,
       body: b.body,
       requestId: b.request_id ?? null,
     });

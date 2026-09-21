@@ -69,7 +69,7 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
       const res = await fetch(`/api/events/${eventId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, parent_id: parentId, request_id: requestId, username: undefined }),
+        body: JSON.stringify({ body, parent_id: parentId, request_id: requestId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "发送失败");
