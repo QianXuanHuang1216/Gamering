@@ -77,19 +77,6 @@ export default function InviteCard() {
 
   return (
     <section aria-label="邀请 Bot" data-testid="home-invite-card">
-      <div className="row" style={{ marginBottom: 4 }}>
-        <span className="msr" aria-hidden>
-          smart_toy
-        </span>
-        <h2 className="t-title-medium">邀请 Bot 进服务器</h2>
-        <span className="spacer" style={{ flex: 1 }} />
-        {guilds !== null && !expired && (
-          <button type="button" className="btn btn-text" onClick={load} disabled={spinning} aria-label="刷新服务器列表">
-            <span className="msr md-18">refresh</span>刷新
-          </button>
-        )}
-      </div>
-
       {guilds === null && !err && !expired && (
         <div className="stack" aria-label="加载中">
           <div className="skel" style={{ height: 56 }} />
