@@ -103,16 +103,25 @@ describe("卡片 payload §7：解耦 + 终态禁用", () => {
     participants: [{ discordId: "81384788765712384", avatarHash: null, seat: "confirmed", joinedAt: 1 }],
     description: "x".repeat(500),
   };
+  const inner = (p) => {
+    assert.equal(p.components.length, 1);
+    assert.equal(p.components[0].type, 17);
+    return p.components[0].components;
+  };
+  it("结构：单 Container 包裹（accent 挂 container 上）", () => {
+    const p = buildCardPayload({ ...base, status: "scheduled" }, "https://site");
+    assert.equal(p.components[0].accent, 5793266);
+  });
   it("满员 live：accent 保持绿，只追加橙色排队行", () => {
     const p = buildCardPayload({ ...base, status: "live" }, "https://site");
     assert.equal(p.flags, COMPONENTS_V2_FLAG);
-    assert.equal(p.accent, 5763719);
-    assert.ok(p.components.some((c) => c.content?.includes("已满员")));
+    assert.equal(p.components[0].accent, 5763719);
+    assert.ok(inner(p).some((c) => c.content?.includes("已满员")));
   });
   it("终态：accent 灰 + 参加/退出 disabled，Link 可点", () => {
     for (const status of ["ended", "cancelled"]) {
       const p = buildCardPayload({ ...base, status }, "https://site");
-      const row = p.components.at(-1).components;
+      const row = inner(p).at(-1).components;
       assert.equal(row[0].disabled, true);
       assert.equal(row[1].disabled, true);
       assert.equal(row[2].disabled, undefined);
@@ -120,17 +129,17 @@ describe("卡片 payload §7：解耦 + 终态禁用", () => {
   });
   it("取消标题前缀 + 长描述截断", () => {
     const p = buildCardPayload({ ...base, status: "cancelled" }, "https://site");
-    assert.ok(p.components[0].content.includes("【已取消】"));
-    assert.ok(p.components.some((c) => c.content?.endsWith("…去网页看全文")));
+    assert.ok(inner(p)[0].content.includes("【已取消】"));
+    assert.ok(inner(p).some((c) => c.content?.endsWith("…去网页看全文")));
   });
   it("v2 去 emoji：标题/容量/满员行均为纯文案（Designer 一句话替换锁定）", () => {
     for (const status of ["scheduled", "live", "ended", "cancelled"]) {
       const p = buildCardPayload({ ...base, status }, "https://site");
-      const texts = p.components.map((c) => c.content ?? "").join("\n");
+      const texts = inner(p).map((c) => c.content ?? "").join("\n");
       assert.ok(!texts.includes("🎮") && !texts.includes("👥") && !texts.includes("⚠️"), status);
     }
     const p = buildCardPayload({ ...base, status: "live" }, "https://site");
-    assert.ok(p.components[0].content.includes("Helldivers 2 【进行中】"));
-    assert.ok(p.components.some((c) => c.content?.includes("已满员，新报名将进入排队（排队 2）")));
+    assert.ok(inner(p)[0].content.includes("Helldivers 2 【进行中】"));
+    assert.ok(inner(p).some((c) => c.content?.includes("已满员，新报名将进入排队（排队 2）")));
   });
 });
