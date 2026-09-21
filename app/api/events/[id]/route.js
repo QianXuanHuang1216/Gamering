@@ -5,6 +5,8 @@ import { fanout } from "@/lib/discord-rest";
 import { validateEventEdit, validateTimes } from "@/lib/edit-validate";
 import { removeMember } from "@/lib/members";
 
+const TERMINAL = new Set(["ended", "cancelled"]);
+
 export async function GET(_req, { params }) {
   const { id } = await params;
   const ev = getEvent(getDb(), id);
@@ -26,6 +28,10 @@ export async function PATCH(req, { params }) {
   if (ev.creatorDiscordId !== discordId) return Response.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({}));
   const { op } = b;
+  // SPA-507：终态事件 API 层只读（UI 层之外第二道防线）。
+  if ((op === "edit" || op === "remove") && TERMINAL.has(eventStatus(ev))) {
+    return Response.json({ error: "事件已终态，只读" }, { status: 403 });
+  }
   if (op === "end") endEvent(db, id);
   else if (op === "cancel") cancelEvent(db, id);
   else if (op === "edit") {
@@ -88,6 +94,7 @@ export async function PATCH(req, { params }) {
     try {
       var removed = removeMember(db, { eventId: id, discordId: b.discord_id, creatorId: discordId });
     } catch (e) {
+      if (e.message === "forbidden") return Response.json({ error: "forbidden" }, { status: 403 });
       return Response.json({ error: e.message }, { status: 400 });
     }
   } else {
