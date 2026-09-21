@@ -39,6 +39,9 @@ export default async function RootLayout({ children }) {
             <span className="topbar-user">
               <AvatarImg className="topbar-avatar" src={avatarUrl(user.discord_id, user.avatar_hash)} seed={user.discord_id} alt="" size={32} />
               <span>{user.username}</span>
+              <a className="btn btn-text" href="/api/auth/logout">
+                退出
+              </a>
             </span>
           ) : (
             <a className="btn btn-filled" href="/api/auth/login" style={{ minHeight: 40 }}>
