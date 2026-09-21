@@ -123,4 +123,14 @@ describe("卡片 payload §7：解耦 + 终态禁用", () => {
     assert.ok(p.components[0].content.includes("【已取消】"));
     assert.ok(p.components.some((c) => c.content?.endsWith("…去网页看全文")));
   });
+  it("v2 去 emoji：标题/容量/满员行均为纯文案（Designer 一句话替换锁定）", () => {
+    for (const status of ["scheduled", "live", "ended", "cancelled"]) {
+      const p = buildCardPayload({ ...base, status }, "https://site");
+      const texts = p.components.map((c) => c.content ?? "").join("\n");
+      assert.ok(!texts.includes("🎮") && !texts.includes("👥") && !texts.includes("⚠️"), status);
+    }
+    const p = buildCardPayload({ ...base, status: "live" }, "https://site");
+    assert.ok(p.components[0].content.includes("Helldivers 2 【进行中】"));
+    assert.ok(p.components.some((c) => c.content?.includes("已满员，新报名将进入排队（排队 2）")));
+  });
 });
