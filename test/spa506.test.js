@@ -184,7 +184,7 @@ describe("SPA-506 B 编辑：cap 下限与移除递补", () => {
     );
     const out = removeMember(db, { eventId: "e1", discordId: "a", creatorId: "owner" });
     assert.equal(out.promotedId, "w");
-    const seats = new Map(listComments.length ? [] : db.prepare("SELECT discord_id, seat FROM participants WHERE event_id='e1'").all().map((r) => [r.discord_id, r.seat]));
+    const seats = new Map(db.prepare("SELECT discord_id, seat FROM participants WHERE event_id='e1'").all().map((r) => [r.discord_id, r.seat]));
     assert.equal(seats.get("w"), "confirmed");
     assert.equal(seats.has("a"), false);
   });

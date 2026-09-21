@@ -3,10 +3,12 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GAME_PRESETS } from "@/lib/games";
+import { defaultStartParts, partsToMs, validateTimes } from "@/lib/edit-validate";
+import DatetimePicker from "@/app/datetime-picker";
 
 const CUSTOM = "自定义…";
 
-/** P1 建事件页（design-spec §3 P1）：表单卡 + Sticky 操作条 + Snackbar。逻辑不动。 */
+/** P1 建事件页（SPA-506 C：默认今天+当前分钟 + M3 日期/时间选择器）。结束 Switch 模式不变。 */
 export default function NewEvent() {
   const router = useRouter();
   const [err, setErr] = useState("");
@@ -14,21 +16,25 @@ export default function NewEvent() {
   const [preset, setPreset] = useState(GAME_PRESETS[0]);
   const [custom, setCustom] = useState("");
   const [customTouched, setCustomTouched] = useState(false);
-  const [form, setForm] = useState({ start_at: "", end_at: "", cap: 5, held: 0, description: "" });
+  const [start, setStart] = useState(() => defaultStartParts(new Date()));
+  const [end, setEnd] = useState(() => {
+    const d = defaultStartParts(new Date());
+    return { ...d, hour: (d.hour + 2) % 24 };
+  });
+  const [form, setForm] = useState({ cap: 5, held: 0, description: "" });
   const [endOn, setEndOn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [createdId, setCreatedId] = useState(null);
 
+  const startMs = start?.date ? partsToMs(start) : null;
+  const endMs = endOn && end?.date ? partsToMs(end) : null;
   const startPast = useMemo(() => {
-    if (!form.start_at) return false;
-    return new Date(form.start_at).getTime() < Date.now();
-  }, [form.start_at]);
-  const endInvalid = useMemo(() => {
-    if (!endOn || !form.end_at || !form.start_at) return false;
-    return new Date(form.end_at).getTime() <= new Date(form.start_at).getTime();
-  }, [endOn, form.end_at, form.start_at]);
+    if (startMs == null) return false;
+    return startMs < Date.now() - 60_000; // 1 分钟容差：默认填充的当前分钟不算过去
+  }, [startMs]);
+  const endInvalid = validateTimes({ startAt: startMs, endAt: endMs }) != null;
   const customInvalid = preset === CUSTOM && custom.trim() === "";
-  const canSubmit = !busy && !startPast && !endInvalid && !customInvalid && !!form.start_at;
+  const canSubmit = !busy && startMs != null && !startPast && !endInvalid && !customInvalid;
 
   async function submit(e) {
     e.preventDefault();
@@ -45,8 +51,8 @@ export default function NewEvent() {
           game_text: gameText,
           cap: Number(form.cap),
           held: Number(form.held),
-          start_at: new Date(form.start_at).toISOString(),
-          end_at: endOn && form.end_at ? new Date(form.end_at).toISOString() : null,
+          start_at: new Date(startMs).toISOString(),
+          end_at: endOn && endMs != null ? new Date(endMs).toISOString() : null,
         }),
       });
       const data = await res.json();
@@ -63,7 +69,6 @@ export default function NewEvent() {
     }
   }
 
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number.isNaN(Number(v)) ? lo : Number(v)));
 
   if (needsLogin) {
@@ -118,22 +123,12 @@ export default function NewEvent() {
             {customTouched && customInvalid && <span className="field-error">请填写自定义游戏名</span>}
           </div>
         )}
-        <div className="field">
-          <span>开始时间（必填）</span>
-          <input
-            className="input"
-            type="datetime-local"
-            value={form.start_at}
-            onChange={set("start_at")}
-            aria-invalid={startPast}
-            aria-describedby="start-err"
-          />
-          {startPast && (
-            <span className="field-error" id="start-err">
-              开始时间不能早于现在
-            </span>
-          )}
-        </div>
+        <DatetimePicker
+          label="开始时间（必填，默认今天 + 当前分钟）"
+          value={start}
+          onChange={setStart}
+          error={startPast ? "开始时间不能早于现在" : ""}
+        />
         <div className="field">
           <div className="switch-row">
             <input
@@ -149,21 +144,12 @@ export default function NewEvent() {
           </div>
           <span className="hint">为空显示“待定”，结束后房主可手动结束。</span>
           {endOn && (
-            <>
-              <input
-                className="input"
-                type="datetime-local"
-                value={form.end_at}
-                onChange={set("end_at")}
-                aria-invalid={endInvalid}
-                aria-describedby="end-err"
-              />
-              {endInvalid && (
-                <span className="field-error" id="end-err">
-                  结束时间必须晚于开始时间
-                </span>
-              )}
-            </>
+            <DatetimePicker
+              label="结束时间"
+              value={end}
+              onChange={setEnd}
+              error={endInvalid ? "结束时间必须晚于开始时间" : ""}
+            />
           )}
         </div>
         <div className="field">
@@ -196,7 +182,7 @@ export default function NewEvent() {
           <textarea
             className="textarea"
             value={form.description}
-            onChange={set("description")}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
             maxLength={2000}
             rows={4}
             placeholder="集合时间、语音频道、装备要求……"
