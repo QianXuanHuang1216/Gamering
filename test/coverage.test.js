@@ -23,6 +23,15 @@ describe("覆盖补齐", () => {
     assert.equal(OAUTH_STATE_COOKIE, "gamer_oauth_state");
   });
 
+  it("P2-3：https 下 cookie 带 Secure，http 下不带", () => {
+    const prev = process.env.SITE_URL;
+    process.env.SITE_URL = "https://gamering.bryan-huang.com";
+    assert.ok(sessionCookie("v").includes("; Secure;"));
+    process.env.SITE_URL = "http://localhost:3000";
+    assert.ok(!sessionCookie("v").includes("Secure"));
+    process.env.SITE_URL = prev;
+  });
+
   it("loadEventView：有/无", () => {
     const db = openDb(":memory:");
     assert.equal(loadEventView(db, "nope"), null);

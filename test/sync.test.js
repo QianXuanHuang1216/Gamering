@@ -60,6 +60,9 @@ describe("fanout：404/403 标 dead，429/5xx 进重试", () => {
     assert.equal(out.find((o) => o.messageId === "limited").retryAfter, 2);
     assert.equal(liveMessages(db, "e").length, 3);
     assert.equal(dueRetries(db, Date.now() + 3600_000).length, 2); // limited + broken
+    const t0 = Date.now();
+    const limited = dueRetries(db, t0 + 3600_000).find((r) => r.message_id === "limited");
+    assert.ok(limited.next_due - t0 <= 5_000, `429 按 retry_after≈2s 到期，实际 +${limited.next_due - t0}ms`);
   });
 });
 

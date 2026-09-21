@@ -49,6 +49,26 @@ describe("db：约束与迁移", () => {
     assert.equal(dueRetries(db, Date.now() + 600_000).length, 0);
   });
 
+  it("P1-1 回归：连续失败退避仍在合理窗口（指数+封顶，不再是时间戳相乘）", () => {
+    const t0 = Date.now();
+    for (let i = 0; i < 5; i++) {
+      enqueueRetry(db, { eventId: "e1", channelId: "c", messageId: "m", status: 503 });
+    }
+    const [r] = dueRetries(db, t0 + 48 * 3600_000);
+    assert.equal(r.attempts, 4);
+    assert.ok(r.next_due > t0, "due 在未来");
+    assert.ok(r.next_due <= t0 + 60_000 * 32 + 5_000, `due 封顶 32 倍内，实际 +${r.next_due - t0}ms`);
+  });
+
+  it("P1-2 回归：retry_after 秒数透传为 next_due", () => {
+    const t0 = Date.now();
+    enqueueRetry(db, { eventId: "e1", channelId: "c", messageId: "m", status: 429, retryAfterSec: 5 });
+    const [r] = dueRetries(db, t0 + 60_000);
+    assert.ok(r, "5 秒后到期");
+    assert.ok(r.next_due - t0 <= 6_000, `due≈+5s，实际 +${r.next_due - t0}ms`);
+    assert.equal(dueRetries(db, t0 + 4_000).length, 0);
+  });
+
   it("eventsWithLiveCards：只返回有活卡事件；markMessageDead 摘除", () => {
     evt("e1"); evt("e2");
     addMessage(db, { eventId: "e1", guildId: "g", channelId: "c", messageId: "m" });

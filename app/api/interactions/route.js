@@ -23,7 +23,12 @@ export async function POST(req) {
   ) {
     return new Response("bad signature", { status: 401 });
   }
-  const interaction = JSON.parse(rawBody);
+  let interaction;
+  try {
+    interaction = JSON.parse(rawBody);
+  } catch {
+    return new Response("bad body", { status: 400 });
+  }
   if (interaction.type === PING) return Response.json({ type: RESP_PONG });
   if (interaction.type !== MESSAGE_COMPONENT) return Response.json({ type: RESP_EPHEMERAL, data: { content: "暂不支持", flags: 64 } });
 
