@@ -8,7 +8,8 @@ import ManageBox from "./manage-box";
 
 /** SSR 直出 OG 标签当分享 fallback（本票 §8）。 */
 export async function generateMetadata({ params }) {
-  const view = loadEventView(getDb(), params.id);
+  const { id } = await params;
+  const view = loadEventView(getDb(), id);
   if (!view) return { title: "事件不存在 | Gamering" };
   const { ev, status } = view;
   const title = `${ev.gameText} | Gamering`;
@@ -17,7 +18,8 @@ export async function generateMetadata({ params }) {
 }
 
 export default async function EventDetail({ params }) {
-  const view = loadEventView(getDb(), params.id);
+  const { id } = await params;
+  const view = loadEventView(getDb(), id);
   if (!view) notFound();
   const { ev, status, participants } = view;
   const discordId = readSession(cookies().toString());
