@@ -1,6 +1,6 @@
-// SPA-507 RED：终态事件 API 层只读加固（路由层用例）。
+// SPA-506（原 SPA-507，已作废并折入本工单）：终态事件 API 层只读加固（路由层用例）。
 // 缺口：op:edit/op:remove 未校验终态；评论 PATCH/DELETE 未校验终态；
-// op:remove 的 removeMember forbidden 误返回 400。
+// op:remove 的 removeMember forbidden 误返回 400；展示名取自客户端可伪造。
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
@@ -15,6 +15,7 @@ const { signSession } = await import("../lib/session.js");
 const { createComment } = await import("../lib/comments.js");
 const { PATCH: patchEvent } = await import("../app/api/events/[id]/route.js");
 const { GET: getComments } = await import("../app/api/events/[id]/comments/route.js");
+const { POST: postComment } = await import("../app/api/events/[id]/comments/route.js");
 const {
   PATCH: patchComment,
   DELETE: deleteComment,
@@ -118,5 +119,28 @@ describe("SPA-507：op:remove 鉴权失败返回 403（非 400）", () => {
       params: { id: "t-rm-auth" },
     });
     assert.equal(res.status, 403);
+  });
+});
+
+describe("SPA-506 P2：评论展示名以服务端 session 为准（防伪造）", () => {
+  it("客户端传入的 username 被忽略，用 users 表展示名", async () => {
+    const { upsertUser } = await import("../lib/db.js");
+    upsertUser(db, { discordId: "ada", username: "真Ada" });
+    liveEvent("t-uname");
+    const res = await postComment(mkReq("ada", { body: "hi", username: "假冒者" }), {
+      params: { id: "t-uname" },
+    });
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.comment.authorUsername, "真Ada");
+  });
+
+  it("users 表无记录时回退为 discordId", async () => {
+    liveEvent("t-uname-fb");
+    const res = await postComment(mkReq("ghost", { body: "hi", username: "假冒者" }), {
+      params: { id: "t-uname-fb" },
+    });
+    assert.equal(res.status, 201);
+    assert.equal((await res.json()).comment.authorUsername, "ghost");
   });
 });
