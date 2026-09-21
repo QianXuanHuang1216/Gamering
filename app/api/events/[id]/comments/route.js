@@ -27,12 +27,15 @@ export async function POST(req, { params }) {
   if (bodyErr) return Response.json({ error: bodyErr }, { status: 400 });
   try {
     // 展示名以服务端 session 为准，不信任客户端传入（防伪造）。
-    const authorUsername = getUser(db, me)?.username ?? me;
+    // SPA-510 P0-1：头像同样以服务端 users 表为准并落库到评论行。
+    const author = getUser(db, me);
+    const authorUsername = author?.username ?? me;
     const c = createComment(db, {
       eventId: id,
       parentId: b.parent_id ?? null,
       authorDiscordId: me,
       authorUsername,
+      authorAvatarHash: author?.avatar_hash ?? null,
       body: b.body,
       requestId: b.request_id ?? null,
     });

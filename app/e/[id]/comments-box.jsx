@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { COMMENT_MAX } from "@/lib/comments";
+import { avatarUrl } from "@/lib/discord";
+import AvatarImg from "@/app/avatar-img";
 
 const rid = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const fmtT = (ts) =>
   new Date(ts).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-const avatar = (name) => (name?.trim()?.[0] ?? "?").toUpperCase();
 const LONG_AT = 200;
 
 function useClamp(text) {
@@ -218,7 +219,6 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
     <section className="card" aria-label="讨论" data-testid="comments-card" id="comments">
       <div className="row">
         <h2 className="t-title-medium" style={{ flex: 1 }}>讨论（{count}）</h2>
-        <span className="chip-label">两层压平 · 无 L3</span>
       </div>
 
       {loading && (
@@ -248,14 +248,14 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
           {(groups ?? []).map((g) => (
             <li className="comment-l1-group" key={g.l1.id}>
               <div className="comment-l1">
-                <span className="avatar avatar-sm" aria-hidden>{avatar(g.l1.authorUsername)}</span>
+                <AvatarImg className="avatar avatar-sm" src={avatarUrl(g.l1.authorDiscordId, g.l1.authorAvatarHash)} seed={g.l1.authorDiscordId} alt="" size={32} />
                 {renderComment(g.l1, false)}
               </div>
               {g.replies.length > 0 && (
                 <div className="comment-l2-wrap" aria-label="回复">
                   {g.replies.map((r) => (
                     <div className="comment-l2" key={r.id}>
-                      <span className="avatar avatar-sm" aria-hidden>{avatar(r.authorUsername)}</span>
+                      <AvatarImg className="avatar avatar-sm" src={avatarUrl(r.authorDiscordId, r.authorAvatarHash)} seed={r.authorDiscordId} alt="" size={32} />
                       {renderComment(r, true)}
                     </div>
                   ))}

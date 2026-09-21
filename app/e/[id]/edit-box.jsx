@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { GAME_PRESETS } from "@/lib/games";
 import { capFloor, msToParts, partsToMs, validateTimes } from "@/lib/edit-validate";
+import { avatarUrl } from "@/lib/discord";
+import AvatarImg from "@/app/avatar-img";
 import DatetimePicker from "@/app/datetime-picker";
 
 const CUSTOM = "自定义…";
@@ -178,7 +180,7 @@ export default function EditBox({ id, ev, participants, onDone }) {
               const isOwner = p.discordId === ev.creatorDiscordId;
               return (
                 <div className="edit-member-row" key={p.discordId}>
-                  <span className="avatar" aria-hidden>{(p.username?.[0] ?? "?").toUpperCase()}</span>
+                  <AvatarImg className="avatar" src={avatarUrl(p.discordId, p.avatarHash)} seed={p.discordId} alt="" size={40} />
                   <span className="who"><div>{p.username}{isOwner ? "（房主）" : ""}</div></span>
                   <button
                     type="button"
