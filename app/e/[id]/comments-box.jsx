@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { COMMENT_MAX } from "@/lib/comments";
+import { COMMENT_MAX, visibleCommentActions } from "@/lib/comments";
 import { avatarUrl } from "@/lib/discord";
 import AvatarImg from "@/app/avatar-img";
 
@@ -147,11 +147,13 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
 
   function actionsFor(c) {
     if (readOnly) return null;
-    const mine = c.authorDiscordId === meId;
-    const canDel = mine || meId === creatorId;
-    if (!mine && !canDel) return null;
+    const { reply, edit: canEdit, del: canDel } = visibleCommentActions({
+      comment: c, meId, creatorId, terminal,
+    });
+    if (!reply && !canEdit && !canDel) return null;
     return (
       <div className="comment-actions">
+        {reply && (
         <button type="button" onClick={() => {
           const g = (groups ?? []).find((x) => x.l1.id === (c.parentId ?? c.id));
           const who = c.authorUsername;
@@ -160,7 +162,8 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
         }}>
           <span className="msr md-18">reply</span>回复
         </button>
-        {mine && (
+        )}
+        {canEdit && (
           <button type="button" onClick={() => setEditing({ id: c.id, body: c.body, busy: false, err: "" })}>
             <span className="msr md-18">edit</span>编辑
           </button>
