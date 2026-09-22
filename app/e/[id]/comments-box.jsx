@@ -248,14 +248,14 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
           {(groups ?? []).map((g) => (
             <li className="comment-l1-group" key={g.l1.id}>
               <div className="comment-l1">
-                <AvatarImg className="avatar avatar-sm" src={avatarUrl(g.l1.authorDiscordId, g.l1.authorAvatarHash)} seed={g.l1.authorDiscordId} alt="" size={32} />
+                <AvatarImg className="avatar" src={avatarUrl(g.l1.authorDiscordId, g.l1.authorAvatarHash)} seed={g.l1.authorDiscordId} alt="" size={32} />
                 {renderComment(g.l1, false)}
               </div>
               {g.replies.length > 0 && (
                 <div className="comment-l2-wrap" aria-label="回复">
                   {g.replies.map((r) => (
                     <div className="comment-l2" key={r.id}>
-                      <AvatarImg className="avatar avatar-sm" src={avatarUrl(r.authorDiscordId, r.authorAvatarHash)} seed={r.authorDiscordId} alt="" size={32} />
+                      <AvatarImg className="avatar" src={avatarUrl(r.authorDiscordId, r.authorAvatarHash)} seed={r.authorDiscordId} alt="" size={32} />
                       {renderComment(r, true)}
                     </div>
                   ))}
