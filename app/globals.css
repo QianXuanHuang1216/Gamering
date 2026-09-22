@@ -88,7 +88,6 @@ a { color: var(--md-sys-color-primary); }
 
 /* 字阶 token */
 .t-headline-medium { font-size: 28px; line-height: 36px; font-weight: 500; margin: 0; }
-.t-headline-small { font-size: 24px; line-height: 32px; font-weight: 600; font-variant-numeric: tabular-nums; margin: 0; }
 .t-title-large { font-size: 22px; line-height: 28px; font-weight: 500; margin: 0; }
 .t-title-medium { font-size: 16px; line-height: 24px; font-weight: 500; margin: 0; }
 .t-body-large { font-size: 16px; line-height: 24px; font-weight: 400; }
@@ -215,12 +214,7 @@ a { color: var(--md-sys-color-primary); }
   border-radius: var(--md-sys-shape-small); padding: 12px; font-size: 14px; line-height: 20px; font-weight: 500;
 }
 
-/* Assist / Label Chip */
-.chip-assist {
-  display: inline-flex; align-items: center; height: 32px; padding: 0 12px;
-  border: 1px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-small);
-  font-size: 12px; font-weight: 500; color: var(--md-sys-color-on-surface); background: transparent;
-}
+/* Label Chip */
 .chip-label {
   display: inline-flex; align-items: center; height: 28px; padding: 0 10px;
   border-radius: var(--md-sys-shape-small); font-size: 12px; font-weight: 500;
