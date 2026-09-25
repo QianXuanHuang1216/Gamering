@@ -134,7 +134,9 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
         setSnack(apiErrorMessage(r, "删除评论"));
         return;
       }
-      if (r.data.kind === "soft") {
+      // 2xx + body 是字面量 null 时 callApi 给的是 { ok: true, data: null }（解析成功，不算 unreadable），
+      // 所以这里只能 ?. —— 不加守卫：{} body 时 undefined === "soft" 为假、走硬删分支，那是既有行为。
+      if (r.data?.kind === "soft") {
         setGroups((gs) =>
           (gs ?? []).map((g) =>
             g.l1.id === deleting.id ? { ...g, l1: { ...g.l1, deleted: true, body: "" } } : g,

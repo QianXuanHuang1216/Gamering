@@ -48,6 +48,15 @@ describe("SPA-549 AC1：2xx 但缺字段，按失败说话", () => {
     }
   });
 
+  it("根因：2xx + body 是字面量 null 时 data:null 但 ok 仍为 true（不落 UNPARSED 哨兵）", async () => {
+    globalThis.fetch = async () => jsonRes(200, null);
+    const r = await callApi("/api/events/e1/comments/c1");
+    assert.deepEqual(r, { ok: true, status: 200, data: null, unreadable: false });
+    // res.json() 解析成功、值就是 null，所以不算 unreadable——但调用点解引用一样会抛。
+    // 取字段只有两条出路：?. 兜住，或先问 fieldErrorMessage。
+    assert.throws(() => r.data.kind, TypeError);
+  });
+
   it("字段值是 null / 空串 / 0 → 算缺（界面拿它没法渲染）", () => {
     for (const comment of [null, "", 0, false]) {
       assert.ok(
@@ -145,10 +154,27 @@ describe("SPA-549 AC2：三处都接上了，没人接的 promise 不复存在",
     }
   });
 
-  it("删评论那处不用守卫：它只比较 r.data.kind，不解引用", () => {
+  it("删评论那处不用守卫：它只比较 r.data?.kind，不解引用", () => {
     const s = src(COMMENTS);
-    assert.ok(s.includes('r.data.kind === "soft"'), "删评论仍按 kind 分软删/硬删");
+    assert.ok(s.includes('r.data?.kind === "soft"'), "删评论仍按 kind 分软删/硬删");
     assert.ok(!/r\.data\.kind\./.test(s), "kind 是比较用的，不该再往上解一层");
+  });
+
+  /**
+   * 钉的是「这个解引用有保护」，不是源码里出现了 ?. 这两个字符——
+   * 用 s.includes 钉可选字符，会把正确的修法当成回归挡下来。
+   * 只扫本票涉及的这两个文件：push-box / edit-box / invite-card 归 SPA-550。
+   */
+  it("不留裸解引用：r.data.<字段> 要么有 ?.，要么前面有 fieldErrorMessage", () => {
+    for (const f of [COMMENTS, NEW]) {
+      const s = src(f);
+      for (const m of s.matchAll(/\br\.data(\??)\.(\w+)/g)) {
+        const [deref, opt, field] = [m[0], m[1], m[2]];
+        if (opt) continue;
+        const guard = s.lastIndexOf(`fieldErrorMessage(r, "${field}",`, m.index);
+        assert.ok(guard > -1, `${f} 的 ${deref} 是裸解引用：data 可能是 null（2xx + 字面量 null body），会抛`);
+      }
+    }
   });
 });
 
