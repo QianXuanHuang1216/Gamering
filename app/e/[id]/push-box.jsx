@@ -5,7 +5,7 @@ import { pushErrorMessage } from "@/lib/push";
 
 const STEPS = ["选群", "选频道", "确认发送"];
 
-/** 响应体不是 JSON（服务端崩了）时的哨兵：不能当成「没 error 就成功」。 */
+/** 响应体不是 JSON（服务端崩了 / 传输截断）时的哨兵。 */
 const UNPARSED = Symbol("unparsed");
 
 /** 推送三步（§4）：Modal（medium+）/ 底部表 draggable（compact）+ Stepper。请求逻辑不动。 */
@@ -28,36 +28,47 @@ export default function PushBox({ id }) {
 
   useEffect(() => {
     if (!open || guilds !== null) return;
-    fetch("/api/guilds")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) setMsg(`失败：${d.error}`);
-        else {
-          setGuilds(d.guilds);
-          setInvite(d.invite_url);
-        }
-      })
-      .catch(() => setMsg("失败：网络错误"));
-    fetch(`/api/events/${id}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.event) setPreview(d.event);
-      })
-      .catch(() => {});
+    callApi("/api/guilds").then((r) => {
+      if (!r.ok) {
+        setMsg(pushErrorMessage(r));
+        return;
+      }
+      setGuilds(r.data.guilds);
+      setInvite(r.data.invite_url);
+    });
+    callApi(`/api/events/${id}`).then((r) => {
+      if (r.ok) setPreview(r.data.event);
+    });
   }, [open, guilds, id]);
+
+  /**
+   * SPA-545：拉 JSON，绝不 throw。返回形状正好是 pushErrorMessage 的入参。
+   * ok 已经折进「响应体读不懂」——2xx 但 body 截断不算已确认的成功：服务端可能已经把卡
+   * 发进 Discord 并落了库，界面一片空白会让人再点一次，Discord 里就多一张卡。
+   */
+  async function callApi(url, init) {
+    try {
+      const res = await fetch(url, init);
+      const data = await res.json().catch(() => UNPARSED);
+      const unreadable = data === UNPARSED;
+      return { ok: res.ok && !unreadable, status: res.status, data: unreadable ? null : data, unreadable };
+    } catch {
+      return { ok: false, status: 0, data: null, unreadable: true };
+    }
+  }
 
   async function pickGuild(g) {
     setGuildId(g.id);
     setGuildName(g.name);
     setMsg("");
     setOkMsg("");
-    const r = await fetch(`/api/guilds/${g.id}/channels`).then((x) => x.json());
-    if (r.error) {
-      setMsg(`失败：${r.error}`);
+    const r = await callApi(`/api/guilds/${g.id}/channels`);
+    if (!r.ok) {
+      setMsg(pushErrorMessage(r));
       return;
     }
-    setChannels(r.channels);
-    setSendable(r.sendable);
+    setChannels(r.data.channels);
+    setSendable(r.data.sendable);
     setStep(2);
   }
 
@@ -66,22 +77,17 @@ export default function PushBox({ id }) {
     setMsg("");
     setOkMsg("");
     try {
-      const res = await fetch(`/api/events/${id}/push`, {
+      const r = await callApi(`/api/events/${id}/push`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel_id: channelId }),
       });
-      const body = await res.json().catch(() => UNPARSED);
-      // SPA-545：成功 / 拿到 JSON 错误体 / 响应读不懂，三态分开。
-      const unreadable = body === UNPARSED;
-      if (res.ok && !unreadable) {
+      if (r.ok) {
         setSentOnce(true);
         setOkMsg(`已发送到 #${channelName}`);
       } else {
-        setMsg(pushErrorMessage({ ok: res.ok, status: res.status, data: body, unreadable }));
+        setMsg(pushErrorMessage(r));
       }
-    } catch {
-      setMsg(pushErrorMessage({ unreadable: true }));
     } finally {
       setBusy(false);
     }
