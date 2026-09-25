@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { callApi } from "@/lib/api-client";
+import { callApi, fieldErrorMessage } from "@/lib/api-client";
 import { pushErrorMessage, pushOutcome, newPushNonce } from "@/lib/push";
 
 const STEPS = ["选群", "选频道", "确认发送"];
@@ -33,11 +33,23 @@ export default function PushBox({ id }) {
         setMsg(pushErrorMessage(r));
         return;
       }
+      // guilds 的取值域只有两个：null（加载中）和数组。渲染期有 guilds.length / guilds.map，
+      // 2xx 但缺这个字段时照存 → guilds 变 undefined → 整页白掉，而且下一行的
+      // guilds !== null 还会把它当成「已经加载过了」，连重拉都不再发生。
+      // 按失败说话，state 留在 null：宁可停在加载态，也不拿空数组骗人
+      // （空数组的意思是「Bot 一个群都没进」，那是另一回事）。关掉重开会重试。
+      const missing = fieldErrorMessage(r, "guilds", "拉取群列表");
+      if (missing) {
+        setMsg(missing);
+        return;
+      }
       setGuilds(r.data.guilds);
-      setInvite(r.data.invite_url);
+      setInvite(r.data?.invite_url ?? null);
     });
     callApi(`/api/events/${id}`).then((r) => {
-      if (r.ok) setPreview(r.data.event);
+      // preview 是可选的：没有它就用默认那段确认文案（渲染期 {preview && …} 短路）。
+      // 这里 ?. 是为了让「取不到也不抛」这件事由调用点自己保证，而不是靠 JSX 恰好短路。
+      if (r.ok) setPreview(r.data?.event);
     });
   }, [open, guilds, id]);
 
@@ -51,8 +63,16 @@ export default function PushBox({ id }) {
       setMsg(pushErrorMessage(r));
       return;
     }
+    // 同上：channels 在 step 2 被 .map。缺了就停在这儿，别 setStep(2)——
+    // 进了 step 2 再发现没有列表，渲染期就抛了。
+    const missing = fieldErrorMessage(r, "channels", "读取频道");
+    if (missing) {
+      setMsg(missing);
+      return;
+    }
     setChannels(r.data.channels);
-    setSendable(r.data.sendable);
+    // sendable 是可选的：查不到只说明「不知道能不能发」，不等于不能发（不能发是 false）。
+    setSendable(r.data?.sendable ?? null);
     setStep(2);
   }
 

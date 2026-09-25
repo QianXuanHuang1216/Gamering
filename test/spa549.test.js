@@ -154,16 +154,20 @@ describe("SPA-549 AC2：三处都接上了，没人接的 promise 不复存在",
     }
   });
 
-  it("删评论那处不用守卫：它只比较 r.data?.kind，不解引用", () => {
+  it("删评论那处不用守卫：它只比较 kind，不解引用 data", () => {
     const s = src(COMMENTS);
-    assert.ok(s.includes('r.data?.kind === "soft"'), "删评论仍按 kind 分软删/硬删");
-    assert.ok(!/r\.data\.kind\./.test(s), "kind 是比较用的，不该再往上解一层");
+    const b = between(s, s.indexOf("async function confirmDelete("), s.indexOf("function actionsFor("));
+    // 钉的是「按 kind 分软删/硬删，且 data 始终带 ?.」，不是源码里出现了 ?. 这几个字符——
+    // 收进一个局部变量（const kind = r.data?.kind）也是对的，那种写法不该被当成回归。
+    assert.ok(/\bkind\b\s*===\s*"soft"/.test(b), "删评论仍按 kind 分软删/硬删");
+    assert.ok(!/\br\.data\.\w/.test(b), "删评论不该裸解引用 data（2xx + 字面量 null body 会抛）");
   });
 
   /**
    * 钉的是「这个解引用有保护」，不是源码里出现了 ?. 这两个字符——
    * 用 s.includes 钉可选字符，会把正确的修法当成回归挡下来。
-   * 只扫本票涉及的这两个文件：push-box / edit-box / invite-card 归 SPA-550。
+   * 只扫本票点名的两个文件：push-box / edit-box / invite-card 那三处归 SPA-550
+   * （在 test/spa550.test.js 里，同一条规则 + 更严的 state 取值域断言）。
    */
   it("不留裸解引用：r.data.<字段> 要么有 ?.，要么前面有 fieldErrorMessage", () => {
     for (const f of [COMMENTS, NEW]) {
