@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { callApi } from "@/lib/api-client";
 import { pushErrorMessage } from "@/lib/push";
 
 const STEPS = ["选群", "选频道", "确认发送"];
-
-/** 响应体不是 JSON（服务端崩了 / 传输截断）时的哨兵。 */
-const UNPARSED = Symbol("unparsed");
 
 /** 推送三步（§4）：Modal（medium+）/ 底部表 draggable（compact）+ Stepper。请求逻辑不动。 */
 export default function PushBox({ id }) {
@@ -40,22 +38,6 @@ export default function PushBox({ id }) {
       if (r.ok) setPreview(r.data.event);
     });
   }, [open, guilds, id]);
-
-  /**
-   * SPA-545：拉 JSON，绝不 throw。返回形状正好是 pushErrorMessage 的入参。
-   * ok 已经折进「响应体读不懂」——2xx 但 body 截断不算已确认的成功：服务端可能已经把卡
-   * 发进 Discord 并落了库，界面一片空白会让人再点一次，Discord 里就多一张卡。
-   */
-  async function callApi(url, init) {
-    try {
-      const res = await fetch(url, init);
-      const data = await res.json().catch(() => UNPARSED);
-      const unreadable = data === UNPARSED;
-      return { ok: res.ok && !unreadable, status: res.status, data: unreadable ? null : data, unreadable };
-    } catch {
-      return { ok: false, status: 0, data: null, unreadable: true };
-    }
-  }
 
   async function pickGuild(g) {
     setGuildId(g.id);

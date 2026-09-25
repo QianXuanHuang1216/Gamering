@@ -35,29 +35,20 @@ const htmlRes = (status = 500) => ({
 const jsonRes = (status, data = {}) => ({ status, ok: status >= 200 && status < 300, json: async () => data });
 
 /**
- * 每个请求站点 → 用户看到的失败文案用的操作名。
- * 「该操作自己的文案」是可断言的：同一句话不许在两个站点复用。
+ * 每个组件 → 请求站点数 + 这些站点覆盖的操作名。
+ * 操作名是用户能看见的那半句：保存失败 ≠ 发送失败 ≠ 评论失败，manage-box 一个站点分两态。
  */
 const SITES = {
-  "app/e/[id]/manage-box.jsx": ["结束", "取消"],
-  "app/e/[id]/edit-box.jsx": ["保存", "移除"],
-  "app/e/[id]/comments-box.jsx": ["发送评论", "保存评论", "删除评论"],
-  "app/events/new/page.jsx": ["创建"],
+  "app/e/[id]/manage-box.jsx": { sites: 1, ops: ["结束", "取消"] },
+  "app/e/[id]/edit-box.jsx": { sites: 2, ops: ["保存", "移除"] },
+  "app/e/[id]/comments-box.jsx": { sites: 3, ops: ["发送评论", "保存评论", "删除评论"] },
+  "app/events/new/page.jsx": { sites: 1, ops: ["创建"] },
 };
 /** invite-card 有 SPA-499 定的 E0 文案，不走 apiErrorMessage（见 test/invite.test.js 的断言）。 */
 const INVITE_CARD = "app/invite-card.jsx";
 const INVITE_COPY = "群列表拉取失败，稍后重试";
-const ALL_LABELS = Object.values(SITES).flat();
+const ALL_LABELS = Object.values(SITES).flatMap((v) => v.ops);
 const FIVE = [...Object.keys(SITES), INVITE_CARD];
-
-/** 抓出该文件传给 apiErrorMessage 的全部操作名（三元里的两个也算）。 */
-function opLabels(file) {
-  const out = [];
-  for (const m of src(file).matchAll(/apiErrorMessage\(\s*\w+\s*,\s*([^)]*?)\)/g)) {
-    for (const l of m[1].matchAll(/"([^"]+)"/g)) out.push(l[1]);
-  }
-  return out.sort();
-}
 
 describe("SPA-548 AC1：callApi 是共享出口，绝不 throw", () => {
   it("HTML 500 → 不抛，unreadable=true 且 ok=false", async () => {
@@ -176,32 +167,40 @@ describe("SPA-548 AC3：失败文案对得上该操作（服务端返回非 JSON
     assert.equal(apiErrorMessage({ ok: true, status: 200, data: { ok: 1 } }, "保存"), "");
   });
 
-  for (const [f, labels] of Object.entries(SITES)) {
-    it(`${f}：${labels.length} 个请求站点各自报了名`, () => {
-      assert.deepEqual(opLabels(f), [...labels].sort(), `${f} 有站点漏了操作名，或多/少了站点`);
+  for (const [f, { sites: want, ops }] of Object.entries(SITES)) {
+    it(`${f}：${want} 个请求站点各自报了名（${ops.join("/")}）`, () => {
       const s = src(f);
       const sites = (s.match(/callApi\(/g) ?? []).length;
       const msgs = (s.match(/apiErrorMessage\(/g) ?? []).length;
+      assert.equal(sites, want, `${f} 请求站点数与预期不符（${sites}）`);
       assert.equal(sites, msgs, `${f} 有 ${sites} 个请求站点但只接了 ${msgs} 个失败提示（没人接的 promise＝界面上什么都不发生）`);
+      for (const op of ops) {
+        assert.ok(s.includes(`"${op}"`), `${f} 的失败文案没有报出「${op}」这个操作名`);
+      }
     });
   }
 
   it("comments-box 三处都补上了失败提示（改前连 catch 都没有）", () => {
     const s = src("app/e/[id]/comments-box.jsx");
-    assert.deepEqual(opLabels("app/e/[id]/comments-box.jsx"), ["保存评论", "删除评论", "发送评论"]);
+    for (const op of ["发送评论", "保存评论", "删除评论"]) {
+      assert.ok(s.includes(`"${op}"`), `评论的「${op}」失败没有提示`);
+    }
     // 重试条直接用 apiErrorMessage 的整句，别再在外面套一层「发送失败：」造成叠句
-    assert.ok(s.includes("发送失败：{"), "重试条仍会叠成「发送失败：发送失败：…」");
+    assert.ok(!s.includes("发送失败：{"), "重试条仍会叠成「发送失败：发送失败：…」");
   });
 
   it("invite-card：保留 SPA-499 的 E0 文案，且全文只有一处定义", () => {
     const s = src(INVITE_CARD);
-    const hits = s.split("群列表拉取失败，稍后重试").length - 1;
+    const hits = s.split(INVITE_COPY).length - 1;
     assert.equal(hits, 1, `E0 文案应在组件里只有一处定义（实际 ${hits} 处）`);
+    assert.ok(s.includes("LOAD_ERROR"), "E0 文案应提成常量，别在 JSX 里再写一遍");
   });
 
   it("登录过期 / 拉取失败两态在非 JSON 响应下仍能分开", () => {
     const s = src(INVITE_CARD);
-    const body = s.slice(s.indexOf("async () =>"), s.indexOf("}, []);"));
-    assert.ok(body.includes("login_required") || body.includes("=== 401"), "401/login_required 仍要走登录过期分支");
+    const body = s.slice(s.indexOf("const load ="), s.indexOf("useEffect(() =>"));
+    assert.ok(body.length > 0, "没找到 load 函数，测试本身该更新");
+    assert.ok(body.includes("login_required") && body.includes("401"), "401/login_required 仍要走登录过期分支");
+    assert.ok(body.includes("LOAD_ERROR"), "其余失败仍要落到 E0 文案");
   });
 });

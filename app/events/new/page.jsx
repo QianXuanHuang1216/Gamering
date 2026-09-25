@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiErrorMessage, callApi } from "@/lib/api-client";
 import { GAME_PRESETS } from "@/lib/games";
 import { defaultStartParts, partsToMs, validateTimes } from "@/lib/edit-validate";
 import DatetimePicker from "@/app/datetime-picker";
@@ -43,7 +44,7 @@ export default function NewEvent() {
     setBusy(true);
     const gameText = preset === CUSTOM ? custom.trim() : preset;
     try {
-      const res = await fetch("/api/events", {
+      const r = await callApi("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -55,15 +56,13 @@ export default function NewEvent() {
           end_at: endOn && endMs != null ? new Date(endMs).toISOString() : null,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        if (data.error === "login_required") setNeedsLogin(true);
-        else setErr(data.error ?? "创建失败");
+      if (!r.ok) {
+        // r.data 为 null 说明响应体读不懂，不能拿它猜是不是没登录。
+        if (r.data?.error === "login_required") setNeedsLogin(true);
+        else setErr(apiErrorMessage(r, "创建"));
         return;
       }
-      setCreatedId(data.event.id);
-    } catch {
-      setErr("网络失败，请重试");
+      setCreatedId(r.data.event.id);
     } finally {
       setBusy(false);
     }

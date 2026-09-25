@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { apiErrorMessage, callApi } from "@/lib/api-client";
 import { GAME_PRESETS } from "@/lib/games";
 import { capFloor, msToParts, partsToMs, validateTimes } from "@/lib/edit-validate";
 import { avatarUrl } from "@/lib/discord";
@@ -73,19 +74,16 @@ export default function EditBox({ id, ev, participants, onDone }) {
         onDone?.("无改动");
         return;
       }
-      const res = await fetch(`/api/events/${id}`, {
+      const r = await callApi(`/api/events/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setSnack(`保存失败：${data.error ?? "操作失败"}`);
+      if (!r.ok) {
+        setSnack(apiErrorMessage(r, "保存"));
         return;
       }
       onDone?.("已保存");
-    } catch {
-      setSnack("保存失败：网络错误");
     } finally {
       setBusy(false);
     }
@@ -95,19 +93,19 @@ export default function EditBox({ id, ev, participants, onDone }) {
     if (!pendingRemove || busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/events/${id}`, {
+      const r = await callApi(`/api/events/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ op: "remove", discord_id: pendingRemove }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "移除失败");
+      if (!r.ok) {
+        setSnack(apiErrorMessage(r, "移除"));
+        return;
+      }
       setRemoved([...removed, pendingRemove]);
-      setSnack(data.promotedId ? `已移除（排队首位已递补）` : "已移除");
+      setSnack(r.data.promotedId ? `已移除（排队首位已递补）` : "已移除");
       setPendingRemove(null);
       onDone?.("removed", true); // 刷新父级数据但不关闭编辑
-    } catch (e) {
-      setSnack(`移除失败：${e.message}`);
     } finally {
       setBusy(false);
     }

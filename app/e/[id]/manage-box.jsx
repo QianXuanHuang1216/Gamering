@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiErrorMessage, callApi } from "@/lib/api-client";
 import EditBox from "./edit-box";
 
 /** 房主管理（§3 P3 结束/取消区分 + SPA-506 编辑事件入口）：tonal 编辑/结束 vs error 取消。 */
@@ -18,21 +19,20 @@ export default function ManageBox({ id, status, ev, participants }) {
     setBusy(true);
     setMsg("");
     try {
-      const res = await fetch(`/api/events/${id}`, {
+      // callApi 绝不 throw，所以这里不用 catch：失败走 r.ok，状态码和服务端的原话都在 r 里。
+      const r = await callApi(`/api/events/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ op: name }),
       });
-      const data = await res.json();
-      if (res.ok) {
+      if (r.ok) {
         setDialog(null);
         setMsg(name === "end" ? "已结束" : "已取消");
         router.refresh();
       } else {
-        setMsg(`失败：${data.error ?? "操作失败"}`);
+        // 结束和取消是两回事，报错要能分辨是哪一次没成。
+        setMsg(apiErrorMessage(r, name === "end" ? "结束" : "取消"));
       }
-    } catch {
-      setMsg("失败：网络错误");
     } finally {
       setBusy(false);
     }
