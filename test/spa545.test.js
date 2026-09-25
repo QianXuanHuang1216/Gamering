@@ -225,6 +225,19 @@ describe("SPA-545 AC1/AC2：precheckChannel 传输失败不显示「（0）」",
     assert.equal((await precheckChannel("cvoice")).reason, "仅支持文字频道");
     assert.equal((await precheckChannel("ctext")).ok, true);
   });
+
+  it("PM P2：成功分支也带 transport:\"ok\"（成对，否则将来判 transport 会误报 502）", async () => {
+    globalThis.fetch = async () => jsonRes(200, { id: "ctext", type: 0, guild_id: "g" });
+    assert.equal((await precheckChannel("ctext")).transport, "ok");
+    const { guildTextChannels, guildSendable } = await import("../lib/discord-rest.js");
+    globalThis.fetch = async (url) => {
+      if (url.endsWith("/roles")) return jsonRes(200, [{ id: "g", permissions: "104324673" }]);
+      if (url.endsWith("/channels")) return jsonRes(200, [{ id: "t", type: 0 }]);
+      return jsonRes(200, { roles: [] });
+    };
+    assert.equal((await guildTextChannels("g")).transport, "ok");
+    assert.equal((await guildSendable("g", "bot")).transport, "ok");
+  });
 });
 
 describe("SPA-545 AC2：push 路由任何分支都返 JSON，绝不吐 HTML 500", () => {
@@ -423,6 +436,13 @@ describe("SPA-545 AC3：前端三态分开 + 不再指向不存在的页面", ()
     assert.equal(pushErrorMessage({ ok: true, status: 201, data: { message_id: "m" } }), "");
   });
 
+  it("PM P1：2xx + 响应体读不懂 ≠ 成功，要出提示而不是空串", () => {
+    // 状态码先到、body 传输中断（TCP 复位/代理截断/CDN 插页）。此时 ok=true 且 unreadable=true：
+    // 服务端可能已经把卡发进 Discord 并落了库，界面一片空白会让用户再点一次 → Discord 里多一张卡。
+    assert.equal(pushErrorMessage({ ok: true, status: 201, unreadable: true }), PUSH_ERROR.unreadable);
+    assert.equal(pushErrorMessage({ ok: true, status: 200, unreadable: true }), "没有收到服务端的回复，请再试一次");
+  });
+
   it("三条文案都是产品里真实存在的说法（非空中文）", () => {
     assert.ok(PUSH_ERROR, "PUSH_ERROR 未导出");
     for (const k of ["transport", "unreadable", "rateLimited", "fallback"]) {
@@ -447,6 +467,13 @@ describe("SPA-545 AC3：前端三态分开 + 不再指向不存在的页面", ()
     const send = box.slice(box.indexOf("async function send()"), box.indexOf("function close()"));
     assert.ok(send.includes("pushErrorMessage"), "send() 未走 pushErrorMessage");
     assert.ok(!send.includes("失败：网络错误"), "send() 仍把服务端崩溃说成客户端断网");
+  });
+
+  it("PM P2：push-box 三个请求站点都走统一映射，没有裸 json() 没人接的 promise", () => {
+    const box = src("app/e/[id]/push-box.jsx");
+    assert.ok(!box.includes("失败：网络错误"), "仍有站点把服务端崩溃说成客户端断网");
+    assert.ok(!/\.then\(\(?[a-z]*\)? => [a-z]*\.json\(\)\)/.test(box), "仍有裸 json() 没有 catch 的 fetch 链");
+    assert.ok(box.includes("callApi"), "push-box 未走统一的 callApi（返回 pushErrorMessage 的入参形状）");
   });
 
   it("「稍后可在详情查看同步状态」从这两处消失", () => {
@@ -497,5 +524,25 @@ describe("SPA-545 AC4：fanout 传输层失败不被静默吞掉", () => {
     assert.ok(lines.some((l) => l.includes("m1")), `上报应带上 message_id：${JSON.stringify(lines)}`);
     assert.equal(dueRetries(db, Date.now() + 3600_000).length, before, "策略不变：传输层失败当前不入重试队列");
     assert.equal(row.alive, 1, "传输层失败不标 dead（Discord 根本没答）");
+  });
+});
+
+describe("SPA-545 P1：worker 的传输层失败不再带走整批 due retries", () => {
+  it("patchCard 传输失败 → runOnce 正常返回，due retries 重新入队（改前会抛，整批丢在那一轮）", async () => {
+    const { runOnce, _resetTick } = await import("../lib/worker.js");
+    _resetTick(Date.now()); // 关掉时间跨越分支，只看重试消费
+    liveEvent("e-worker");
+    for (const [ch, mid] of [["c1", "m1"], ["c2", "m2"]]) {
+      addMessage(db, { eventId: "e-worker", guildId: "g", channelId: ch, messageId: mid });
+      enqueueRetry(db, { eventId: "e-worker", channelId: ch, messageId: mid, status: 503 });
+    }
+    const at = Date.now() + 3600_000;
+    globalThis.fetch = async () => {
+      throw new TypeError("fetch failed");
+    };
+    const out = await runOnce(db, at); // 改前这里会抛：worker.js:33 的 else 走不到
+    const mine = db.prepare("SELECT COUNT(*) AS n FROM sync_retries WHERE event_id = ?").get("e-worker").n;
+    assert.equal(out.retried, 0);
+    assert.equal(mine, 2, "两条都要重新入队，一条频道断掉不该带走整批");
   });
 });
