@@ -78,18 +78,20 @@ export default function PushBox({ id }) {
    * SPA-546：「刚才那一下到底成没成」不再靠猜。
    * unreadable 落在「卡可能已经进了 Discord」的窗口里，此时「请再试一次」就是在教人
    * 制造重复卡——改成先查 event_messages（只读接口），按查到的三种结果分别说话。
-   * nonce 随这次发送手势带过去：失败后重发复用它，Discord 侧不会多出一张卡。
+   * 一次手势一个 nonce：POST 带它、事后查询也带它（否则查回来的可能是上一次留下的卡，
+   * 把没发出去说成发出去了）。确认成功才换新 nonce，失败重发复用同一个。
    */
   async function send() {
     setBusy(true);
     setMsg("");
     setOutcome(null);
     setOkMsg("");
+    const gestureNonce = nonce ?? newPushNonce();
     try {
       const r = await callApi(`/api/events/${id}/push`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel_id: channelId, nonce }),
+        body: JSON.stringify({ channel_id: channelId, nonce: gestureNonce }),
       });
       if (r.ok) {
         setSentOnce(true);
@@ -97,7 +99,8 @@ export default function PushBox({ id }) {
         // 只有确认成功才换新 nonce：用户主动再发一张是产品承诺的行为，不能被去重吞掉。
         setNonce(newPushNonce());
       } else if (r.unreadable) {
-        const v = await callApi(`/api/events/${id}/push?channel_id=${encodeURIComponent(channelId)}`);
+        const q = new URLSearchParams({ channel_id: channelId, nonce: gestureNonce });
+        const v = await callApi(`/api/events/${id}/push?${q}`);
         setOutcome(pushOutcome(v));
       } else {
         setMsg(pushErrorMessage(r));
