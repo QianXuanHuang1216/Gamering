@@ -1,6 +1,7 @@
 import { getDb, getUser } from "@/lib/db";
 import { readSession } from "@/lib/session";
 import { botGuilds, userGuilds, manageableIds, botInviteLink } from "@/lib/discord-rest";
+import { discordUnreachable } from "@/lib/push";
 
 /** 选群：用户可管理 ∩ Bot 已在。空交集 → 空状态 + 一键邀请链接。 */
 export async function GET(req) {
@@ -9,8 +10,10 @@ export async function GET(req) {
   const user = getUser(getDb(), discordId);
   if (!user?.access_token) return Response.json({ error: "login_required" }, { status: 401 });
 
+  // SPA-545：两条 Discord 调用都只返回不抛，Discord 没答上来时返 5xx JSON，不是 HTML 500。
   const [mine, bot] = await Promise.all([userGuilds(user.access_token), botGuilds()]);
   if (!mine.ok && mine.status === 401) return Response.json({ error: "login_required" }, { status: 401 });
+  if (mine.transport !== "ok" || bot.transport !== "ok") return discordUnreachable();
   if (!mine.ok || !bot.ok) return Response.json({ error: "群列表拉取失败，稍后重试" }, { status: 502 });
 
   const managed = manageableIds(mine.data);
