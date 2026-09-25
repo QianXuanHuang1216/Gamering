@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { callApi } from "@/lib/api-client";
 import { dedupeGuilds, diffNewGuilds, guildIconUrl, loginHref, visibleGuilds } from "@/lib/invite";
+
+/** E0：群列表拉不到时唯一的用户可见说法（SPA-499 定的，别分叉）。 */
+const LOAD_ERROR = "群列表拉取失败，稍后重试";
 
 /**
  * 主页邀请卡 S1/S2/E0-E3（SPA-499，设计 SPA-498）。
@@ -22,26 +26,24 @@ export default function InviteCard() {
     setSpinning(true);
     setErr("");
     try {
-      const r = await fetch("/api/guilds");
-      const d = await r.json();
-      if (r.status === 401 || d.error === "login_required") {
+      // callApi 绝不 throw：服务端崩了返 HTML 时，d 为 null，落到下面的「拉取失败」而不是空转。
+      const r = await callApi("/api/guilds");
+      if (r.status === 401 || r.data?.error === "login_required") {
         setExpired(true);
         return;
       }
-      if (!r.ok || d.error) {
-        setErr("群列表拉取失败，稍后重试");
+      if (!r.ok || r.data?.error) {
+        setErr(LOAD_ERROR);
         return;
       }
-      const list = dedupeGuilds(d.guilds ?? []);
+      const list = dedupeGuilds(r.data.guilds ?? []);
       const added = prevRef.current ? diffNewGuilds(prevRef.current, list) : [];
       prevRef.current = list;
       setGuilds(list);
-      setInvite(d.invite_url ?? null);
+      setInvite(r.data.invite_url ?? null);
       setExpired(false);
       // E3：邀请返回后重拉出现新服 → 成功条（按 id 去重，文案含群名）
       if (added.length > 0 && prevRef.current && list.length > 0) setFresh(added.slice(0, 1));
-    } catch {
-      setErr("群列表拉取失败，稍后重试");
     } finally {
       setSpinning(false);
     }
@@ -97,7 +99,7 @@ export default function InviteCard() {
       {err && !expired && (
         <div className="empty" data-testid="home-invite-error">
           <p className="t-body-medium" role="alert" style={{ color: "var(--md-sys-color-error)" }}>
-            群列表拉取失败，稍后重试
+            {LOAD_ERROR}
           </p>
           <button type="button" className="btn btn-text" onClick={load} disabled={spinning}>
             重试

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { apiErrorMessage, callApi } from "@/lib/api-client";
 import { COMMENT_MAX, visibleCommentActions } from "@/lib/comments";
 import { avatarUrl } from "@/lib/discord";
 import AvatarImg from "@/app/avatar-img";
@@ -67,18 +68,19 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
     setSending(true);
     setFailed(null);
     try {
-      const res = await fetch(`/api/events/${eventId}/comments`, {
+      const r = await callApi(`/api/events/${eventId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body, parent_id: parentId, request_id: requestId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "发送失败");
-      upsertLocal(data.comment);
+      if (!r.ok) {
+        // 带上原 requestId：重试是同一条评论，不会发成两条。
+        setFailed({ body, parentId, requestId, msg: apiErrorMessage(r, "发送评论") });
+        return;
+      }
+      upsertLocal(r.data.comment);
       setDraft("");
       setReply(null);
-    } catch (e) {
-      setFailed({ body, parentId, requestId, msg: e.message });
     } finally {
       setSending(false);
     }
@@ -93,35 +95,35 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
   async function saveEdit() {
     if (!editing || editing.busy) return;
     setEditing({ ...editing, busy: true, err: "" });
-    try {
-      const res = await fetch(`/api/events/${eventId}/comments/${editing.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: editing.body }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "保存失败");
-      const c = data.comment;
-      setGroups((gs) =>
-        (gs ?? []).map((g) => ({
-          l1: g.l1.id === c.id ? { ...g.l1, body: c.body, editedAt: c.editedAt, edited: true } : g.l1,
-          replies: g.replies.map((r) => (r.id === c.id ? { ...r, body: c.body, editedAt: c.editedAt, edited: true } : r)),
-        })),
-      );
-      setEditing(null);
-    } catch (e) {
-      setEditing({ ...editing, busy: false, err: e.message });
+    const r = await callApi(`/api/events/${eventId}/comments/${editing.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: editing.body }),
+    });
+    if (!r.ok) {
+      setEditing({ ...editing, busy: false, err: apiErrorMessage(r, "保存评论") });
+      return;
     }
+    const c = r.data.comment;
+    setGroups((gs) =>
+      (gs ?? []).map((g) => ({
+        l1: g.l1.id === c.id ? { ...g.l1, body: c.body, editedAt: c.editedAt, edited: true } : g.l1,
+        replies: g.replies.map((rep) => (rep.id === c.id ? { ...rep, body: c.body, editedAt: c.editedAt, edited: true } : rep)),
+      })),
+    );
+    setEditing(null);
   }
 
   async function confirmDelete() {
     if (!deleting || busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/events/${eventId}/comments/${deleting.id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "删除失败");
-      if (data.kind === "soft") {
+      const r = await callApi(`/api/events/${eventId}/comments/${deleting.id}`, { method: "DELETE" });
+      if (!r.ok) {
+        setSnack(apiErrorMessage(r, "删除评论"));
+        return;
+      }
+      if (r.data.kind === "soft") {
         setGroups((gs) =>
           (gs ?? []).map((g) =>
             g.l1.id === deleting.id ? { ...g, l1: { ...g.l1, deleted: true, body: "" } } : g,
@@ -132,14 +134,12 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
           (gs ?? [])
             .map((g) => ({
               l1: g.l1,
-              replies: g.replies.filter((r) => r.id !== deleting.id),
+              replies: g.replies.filter((rep) => rep.id !== deleting.id),
             }))
             .filter((g) => g.l1.id !== deleting.id),
         );
       }
       setDeleting(null);
-    } catch (e) {
-      setSnack(`删除失败：${e.message}`);
     } finally {
       setBusy(false);
     }
@@ -312,7 +312,7 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
 
       {failed && (
         <div className="snackbar snackbar-error" role="alert">
-          发送失败：{failed.msg}
+          {failed.msg}
           <span className="spacer" />
           <button className="snack-action" onClick={() => send(failed.body, failed.parentId, failed.requestId)}>重试</button>
         </div>
