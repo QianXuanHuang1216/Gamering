@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { pushErrorMessage } from "@/lib/push";
 
 const STEPS = ["选群", "选频道", "确认发送"];
+
+/** 响应体不是 JSON（服务端崩了）时的哨兵：不能当成「没 error 就成功」。 */
+const UNPARSED = Symbol("unparsed");
 
 /** 推送三步（§4）：Modal（medium+）/ 底部表 draggable（compact）+ Stepper。请求逻辑不动。 */
 export default function PushBox({ id }) {
@@ -67,15 +71,17 @@ export default function PushBox({ id }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel_id: channelId }),
       });
-      const data = await res.json();
-      if (res.ok) {
+      const body = await res.json().catch(() => UNPARSED);
+      // SPA-545：成功 / 拿到 JSON 错误体 / 响应读不懂，三态分开。
+      const unreadable = body === UNPARSED;
+      if (res.ok && !unreadable) {
         setSentOnce(true);
         setOkMsg(`已发送到 #${channelName}`);
       } else {
-        setMsg(`失败：${data.error ?? "发送失败"}`);
+        setMsg(pushErrorMessage({ ok: res.ok, status: res.status, data: body, unreadable }));
       }
     } catch {
-      setMsg("失败：网络错误，稍后可在详情查看同步状态");
+      setMsg(pushErrorMessage({ unreadable: true }));
     } finally {
       setBusy(false);
     }

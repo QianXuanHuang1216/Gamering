@@ -49,7 +49,7 @@ const jsonRes = (status, data = {}) => ({
 /** 抓 console.error 上报用。 */
 function captureError() {
   const lines = [];
-  console.error = (...a) => lines.push(a.map(String).join(" "));
+  console.error = (...a) => lines.push(a.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" "));
   return lines;
 }
 
@@ -264,6 +264,7 @@ describe("SPA-545 AC2：push 路由任何分支都返 JSON，绝不吐 HTML 500"
     t.mock.timers.enable({ apis: ["setTimeout"] });
     globalThis.fetch = hangingFetch;
     const p = pushEvent(mkReq("owner", { channel_id: "chan-1" }), { params: { id: "e-timeout" } });
+    await new Promise((r) => setImmediate(r)); // 路由要走到真正发请求那一刻，超时才注册得上
     t.mock.timers.tick(DISCORD_TIMEOUT_MS);
     const res = await p;
     assert.ok(res.status >= 500, `超时应为 5xx，实际 ${res.status}`);
@@ -390,8 +391,14 @@ describe("SPA-545 AC2：guilds / channels 路由不再崩成 HTML 500", () => {
 
 describe("SPA-545 AC3：前端三态分开 + 不再指向不存在的页面", () => {
   it("传输失败（5xx）→ 连不上 Discord，请再试一次", () => {
-    assert.equal(pushErrorMessage({ status: 502, data: { error: "whatever" } }), "连不上 Discord，请再试一次");
-    assert.equal(pushErrorMessage({ status: 500, data: null }), PUSH_ERROR?.transport);
+    assert.equal(pushErrorMessage({ status: 502, data: null }), PUSH_ERROR.transport);
+    assert.equal(pushErrorMessage({ status: 500, data: {} }), PUSH_ERROR.transport);
+    assert.equal(pushErrorMessage({ status: 502, data: null }), "连不上 Discord，请再试一次");
+  });
+
+  it("服务端 5xx 带了可操作的 error 时照传，不被覆盖成「连不上 Discord」", () => {
+    const why = "Bot 在该频道没有发送权限，换个频道试试";
+    assert.equal(pushErrorMessage({ status: 502, data: { error: why } }), why);
   });
 
   it("响应无法解析 / fetch 失败 → 没有收到服务端的回复，请再试一次", () => {
@@ -423,10 +430,23 @@ describe("SPA-545 AC3：前端三态分开 + 不再指向不存在的页面", ()
     }
   });
 
-  it("push-box 真的接上 pushErrorMessage（不是死函数）", () => {
+  it("前后端同一份文案：路由 5xx 的 body 就是客户端会显示的那句", async () => {
+    liveEvent("e-copy");
+    globalThis.fetch = async () => {
+      throw new TypeError("fetch failed");
+    };
+    const res = await pushEvent(mkReq("owner", { channel_id: "chan-1" }), { params: { id: "e-copy" } });
+    const body = await res.json();
+    assert.equal(body.error, PUSH_ERROR.transport);
+    assert.equal(pushErrorMessage({ status: res.status, data: body }), body.error, "客户端不能把服务端的话改写成别的说法");
+  });
+
+  it("push-box 的 send() 真的接上 pushErrorMessage（不是死函数）", () => {
     const box = src("app/e/[id]/push-box.jsx");
     assert.ok(box.includes("pushErrorMessage"), "push-box 未使用 pushErrorMessage");
-    assert.ok(!box.includes('setMsg("失败：网络错误'), "旧的 catch 文案还在");
+    const send = box.slice(box.indexOf("async function send()"), box.indexOf("function close()"));
+    assert.ok(send.includes("pushErrorMessage"), "send() 未走 pushErrorMessage");
+    assert.ok(!send.includes("失败：网络错误"), "send() 仍把服务端崩溃说成客户端断网");
   });
 
   it("「稍后可在详情查看同步状态」从这两处消失", () => {
