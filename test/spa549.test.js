@@ -26,8 +26,6 @@ afterEach(() => {
 });
 
 const jsonRes = (status, data = {}) => ({ status, ok: status >= 200 && status < 300, json: async () => data });
-/** 2xx + 合法 JSON + 就是少了那个字段：状态码到了，结构没到。 */
-const missingRes = (status = 200) => jsonRes(status, {});
 
 describe("SPA-549 AC1：2xx 但缺字段，按失败说话", () => {
   it("字段在 → 空串，调用方照常往下走", async () => {
@@ -84,12 +82,27 @@ describe("SPA-549 AC1：2xx 但缺字段，按失败说话", () => {
 describe("SPA-549 AC2：三处都接上了，没人接的 promise 不复存在", () => {
   const COMMENTS = "app/e/[id]/comments-box.jsx";
   const NEW = "app/events/new/page.jsx";
+  /** 组件文件里每一处守卫的位置，从上往下按出现顺序返回。 */
+  const guardsOf = (file) => {
+    const s = src(file);
+    return [...s.matchAll(/fieldErrorMessage\(r, "(\w+)", "([^"]+)"\)/g)].map((m) => ({ at: m.index, field: m[1], op: m[2], s }));
+  };
+  const between = (s, from, to) => s.slice(from, to === -1 ? s.length : to);
+
+  it("工单点名的三处都接上了，没有第四处", () => {
+    assert.deepEqual(
+      [COMMENTS, NEW].flatMap((f) => guardsOf(f).map(({ field, op }) => `${f} ${op} → ${field}`)),
+      [
+        `${COMMENTS} 发送评论 → comment`,
+        `${COMMENTS} 保存评论 → comment`,
+        `${NEW} 创建 → event`,
+      ],
+    );
+  });
 
   it("comments-box / send：守卫排在 upsertLocal(r.data.comment) 之前", () => {
-    const body = src(COMMENTS).slice(
-      src(COMMENTS).indexOf("async function send("),
-      src(COMMENTS).indexOf("function onSend("),
-    );
+    const s = src(COMMENTS);
+    const body = between(s, s.indexOf("async function send("), s.indexOf("function onSend("));
     const guard = body.indexOf('fieldErrorMessage(r, "comment", "发送评论")');
     const deref = body.indexOf("upsertLocal(r.data.comment)");
     assert.ok(guard > -1, "send 没问「comment 在不在」就 upsertLocal(r.data.comment)");
@@ -98,19 +111,20 @@ describe("SPA-549 AC2：三处都接上了，没人接的 promise 不复存在",
 
   it("comments-box / saveEdit：守卫排在 r.data.comment 之前，且把 busy 解开", () => {
     const s = src(COMMENTS);
-    const body = s.slice(s.indexOf("async function saveEdit("), s.indexOf("async function confirmDelete("));
+    const body = between(s, s.indexOf("async function saveEdit("), s.indexOf("async function confirmDelete("));
     const guard = body.indexOf('fieldErrorMessage(r, "comment", "保存评论")');
     const deref = body.indexOf("r.data.comment");
     assert.ok(guard > -1, "saveEdit 没问「comment 在不在」就 const c = r.data.comment");
     assert.ok(deref > -1 && guard < deref, "守卫必须排在取字段之前");
     // 编辑框卡死就是这么来的：抛在 setEditing(null) 之前，busy 再没人改。
-    assert.ok(/busy: false/.test(body.slice(guard, deref)), "守卫分支没有把 editing.busy 置回 false（编辑框会永远转圈）");
-    assert.ok(/err:/.test(body.slice(guard, deref)), "守卫分支没有把失败文案挂到 editing.err 上（用户看不到任何提示）");
+    const branch = body.slice(guard, deref);
+    assert.ok(/busy: false/.test(branch), "守卫分支没有把 editing.busy 置回 false（编辑框会永远转圈）");
+    assert.ok(/err:/.test(branch), "守卫分支没有把失败文案挂到 editing.err 上（用户看不到任何提示）");
   });
 
   it("events/new：守卫排在 r.data.event.id 之前，且落进 err", () => {
     const s = src(NEW);
-    const body = s.slice(s.indexOf("async function submit("), s.indexOf("const clamp ="));
+    const body = between(s, s.indexOf("async function submit("), s.indexOf("const clamp ="));
     const guard = body.indexOf('fieldErrorMessage(r, "event", "创建")');
     const deref = body.indexOf("r.data.event.id");
     assert.ok(guard > -1, "submit 没问「event 在不在」就 setCreatedId(r.data.event.id)");
@@ -118,19 +132,23 @@ describe("SPA-549 AC2：三处都接上了，没人接的 promise 不复存在",
     assert.ok(/setErr\(/.test(body.slice(guard, deref)), "守卫分支没有 setErr（按钮解锁后页面上什么都不发生）");
   });
 
-  it("两处「取字段」都在 !r.ok 之后，失败不会被报两遍", () => {
+  it("每一处守卫都跑在 !r.ok 分支之后，失败不会被报两遍", () => {
     for (const f of [COMMENTS, NEW]) {
-      const s = src(f);
-      for (const guard of s.match(/fieldErrorMessage\(r,/g) ?? []) {
-        const at = s.indexOf(guard);
-        assert.ok(s.lastIndexOf("if (!r.ok)", at) > -1, `${f} 的守卫跑在了 !r.ok 分支之前`);
+      for (const { at, op, s } of guardsOf(f)) {
+        const notOk = s.lastIndexOf("if (!r.ok)", at);
+        assert.ok(notOk > -1, `${f}「${op}」的守卫跑在了 !r.ok 分支之前，传输失败会走不到它`);
+        assert.ok(
+          s.slice(notOk, at).includes("return;"),
+          `${f}「${op}」的 !r.ok 分支没 return，两条失败路径会连着报`,
+        );
       }
     }
   });
 
-  it("删评论那处不需要守卫：它只比较 r.data.kind，不解引用", () => {
+  it("删评论那处不用守卫：它只比较 r.data.kind，不解引用", () => {
     const s = src(COMMENTS);
     assert.ok(s.includes('r.data.kind === "soft"'), "删评论仍按 kind 分软删/硬删");
+    assert.ok(!/r\.data\.kind\./.test(s), "kind 是比较用的，不该再往上解一层");
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { apiErrorMessage, callApi } from "@/lib/api-client";
+import { apiErrorMessage, callApi, fieldErrorMessage } from "@/lib/api-client";
 import { COMMENT_MAX, visibleCommentActions } from "@/lib/comments";
 import { avatarUrl } from "@/lib/discord";
 import AvatarImg from "@/app/avatar-img";
@@ -78,6 +78,11 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
         setFailed({ body, parentId, requestId, msg: apiErrorMessage(r, "发送评论") });
         return;
       }
+      const missing = fieldErrorMessage(r, "comment", "发送评论");
+      if (missing) {
+        setFailed({ body, parentId, requestId, msg: missing });
+        return;
+      }
       upsertLocal(r.data.comment);
       setDraft("");
       setReply(null);
@@ -102,6 +107,12 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
     });
     if (!r.ok) {
       setEditing({ ...editing, busy: false, err: apiErrorMessage(r, "保存评论") });
+      return;
+    }
+    // busy 必须在这里解开：下面任何一次抛异常都会把编辑框永远留在「保存中」。
+    const missing = fieldErrorMessage(r, "comment", "保存评论");
+    if (missing) {
+      setEditing({ ...editing, busy: false, err: missing });
       return;
     }
     const c = r.data.comment;

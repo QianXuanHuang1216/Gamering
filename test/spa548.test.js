@@ -160,6 +160,8 @@ describe("SPA-548 AC3：失败文案对得上该操作（服务端返回非 JSON
   it("JSON 错误体没有 error → 兜底也带操作名，不是空串", () => {
     const msg = apiErrorMessage({ ok: false, status: 400, data: {} }, "删除评论");
     assert.equal(msg, `删除评论失败：${API_ERROR.fallback}`);
+    // SPA-549：前面已经拼了「删除评论失败：」，fallback 自己再说一遍「操作失败」就叠句了。
+    assert.equal(msg.split("失败").length - 1, 1, `「失败」说了两遍：${msg}`);
     assert.ok(msg.length > 0);
   });
 
