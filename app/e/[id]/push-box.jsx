@@ -87,6 +87,7 @@ export default function PushBox({ id }) {
     setOutcome(null);
     setOkMsg("");
     const gestureNonce = nonce ?? newPushNonce();
+    if (nonce === null) setNonce(gestureNonce); // 兜底值要留在 state 里，否则下次重发会换一个 nonce
     try {
       const r = await callApi(`/api/events/${id}/push`, {
         method: "POST",
