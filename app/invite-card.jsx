@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { callApi } from "@/lib/api-client";
+import { callApi, fieldErrorMessage } from "@/lib/api-client";
 import { dedupeGuilds, diffNewGuilds, guildIconUrl, loginHref, visibleGuilds } from "@/lib/invite";
 
 /** E0：群列表拉不到时唯一的用户可见说法（SPA-499 定的，别分叉）。 */
@@ -36,11 +36,19 @@ export default function InviteCard() {
         setErr(LOAD_ERROR);
         return;
       }
+      // 上面那行挡不住 r.data 本身是 null（2xx + 字面量 null body）：r.data?.error
+      // 读出 undefined 为假，直接落到下一行就抛。guilds 缺了按失败说话——
+      // 别拿 [] 顶替，那是在骗用户说「Bot 一个群都没进」。
+      const missing = fieldErrorMessage(r, "guilds", "拉取群列表");
+      if (missing) {
+        setErr(missing);
+        return;
+      }
       const list = dedupeGuilds(r.data.guilds ?? []);
       const added = prevRef.current ? diffNewGuilds(prevRef.current, list) : [];
       prevRef.current = list;
       setGuilds(list);
-      setInvite(r.data.invite_url ?? null);
+      setInvite(r.data?.invite_url ?? null);
       setExpired(false);
       // E3：邀请返回后重拉出现新服 → 成功条（按 id 去重，文案含群名）
       if (added.length > 0 && prevRef.current && list.length > 0) setFresh(added.slice(0, 1));
@@ -99,7 +107,7 @@ export default function InviteCard() {
       {err && !expired && (
         <div className="empty" data-testid="home-invite-error">
           <p className="t-body-medium" role="alert" style={{ color: "var(--md-sys-color-error)" }}>
-            {LOAD_ERROR}
+            {err}
           </p>
           <button type="button" className="btn btn-text" onClick={load} disabled={spinning}>
             重试

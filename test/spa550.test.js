@@ -53,7 +53,19 @@ const guardsOf = (file) => {
   return [...s.matchAll(/fieldErrorMessage\(r, "(\w+)", "([^"]+)"\)/g)].map((m) => ({ at: m.index, field: m[1], op: m[2], s }));
 };
 const between = (s, from, to) => s.slice(from, to === -1 ? s.length : to);
-const body = (file, from, to) => between(src(file), src(file).indexOf(from), src(file).indexOf(to));
+
+/**
+ * 去掉注释再扫。断言说的是代码，注释里出现同样的字样不算数——
+ * 我自己写注释解释「别 setStep(2)」，就被自己那条断言挡下来了。
+ * `[^:]` 是为了不把 https:// 里的双斜杠当注释起点。
+ */
+const code = (file) =>
+  src(file)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .map((l) => l.replace(/(^|[^:])\/\/.*$/, "$1"))
+    .join("\n");
+const body = (file, from, to) => between(code(file), code(file).indexOf(from), code(file).indexOf(to));
 
 describe("SPA-550 AC1：三处都接上了（push-box / edit-box / invite-card）", () => {
   it("工单点名的守卫一处不少", () => {
@@ -98,59 +110,62 @@ describe("SPA-550 AC1：三处都接上了（push-box / edit-box / invite-card�
   });
 });
 
-describe("SPA-550 AC2：渲染期不可能再拿到 undefined", () => {
-  it("push-box / guilds：state 的取值域被锁成 null 或数组", () => {
-    const s = src(PUSH);
-    assert.equal(
-      (s.match(/setGuilds\(/g) ?? []).length,
-      1,
-      "setGuilds 只该被调用一次：多一个调用点就多一条能塞进 undefined 的路",
-    );
-    assert.ok(s.includes("useState(null)"), "guilds 初值必须是 null（加载态），不是 undefined");
-    // 三处渲染期解引用（空态 / 列表 / map）都得挂在 guilds 的 null 检查之后
-    const lines = s.split("\n");
-    const derefs = lines
-      .map((text, i) => [i + 1, text])
-      .filter(([, text]) => /guilds\.(length|map)\b/.test(text))
-      .map(([n]) => n);
-    assert.ok(derefs.length >= 3, `guilds 的渲染期解引用只剩 ${derefs.length} 处，测试该更新了`);
-    for (const n of derefs) {
-      assert.ok(
-        lines[n - 1].includes("guilds !== null") || lines[n - 1].includes("guilds === null"),
-        `push-box 第 ${n} 行在没查 null 的分支里解引用了 guilds`,
-      );
-    }
-  });
+describe("SPA-550 AC2：state 的取值域被锁住，渲染期不可能拿到 undefined", () => {
+  /**
+   * 渲染期会解引用 guilds.length / guilds.map / channels.map，所以这两个 state
+   * 的取值域必须只有「null 或数组」。这里不去逐行扫 JSX（条件会折行，逐行扫必假警报），
+   * 而是钉住真正撑住这个不变量的三件事：初值是 null、写入点唯一、写入前有守卫且守卫会 return。
+   * 三者合起来 → guilds/channels 要么是 null，要么是过了守卫的数组，永远不是 undefined。
+   */
+  const STATE = [
+    { f: PUSH, var: "guilds", field: "guilds", op: "拉取群列表" },
+    { f: PUSH, var: "channels", field: "channels", op: "读取频道" },
+    { f: INVITE, var: "guilds", field: "guilds", op: "拉取群列表" },
+  ];
 
-  it("push-box / channels：只有过了守卫才会被赋值", () => {
-    const b = body(PUSH, "async function pickGuild(", "/**\n   * SPA-546");
-    const guard = b.indexOf('fieldErrorMessage(r, "channels", "读取频道")');
-    const set = b.indexOf("setChannels(");
-    assert.ok(b.slice(0, guard).indexOf("setChannels(") === -1, "守卫之前不该有 setChannels");
-    assert.equal((b.match(/setChannels\(/g) ?? []).length, 1, "setChannels 只该被调用一次");
-  });
+  for (const { f, var: name, field, op } of STATE) {
+    it(`${f} / ${name}：初值 null + 唯一写入点 + 写入前有会 return 的守卫`, () => {
+      const s = code(f);
+      const writes = [...s.matchAll(new RegExp(`set${name[0].toUpperCase()}${name.slice(1)}\\(`, "g"))];
+      assert.equal(writes.length, 1, `${name} 有 ${writes.length} 个写入点：每多一个就多一条塞 undefined 的路`);
+      const write = writes[0].index;
+      const guard = s.lastIndexOf(`fieldErrorMessage(r, "${field}", "${op}")`, write);
+      assert.ok(guard > -1, `${name} 的写入点前面没有 fieldErrorMessage(r, "${field}", …) 守卫`);
+      assert.ok(guard < write, `${name}：守卫必须排在写入之前`);
+      assert.ok(/return;/.test(s.slice(guard, write)), `${name}：守卫分支没有 return，照旧会写进去`);
+    });
+  }
 
-  it("invite-card：guilds 的渲染期解引用都在 null 检查之后", () => {
-    const s = src(INVITE);
-    for (const m of s.matchAll(/guilds\.(length|map|filter)/g)) {
-      const line = s.slice(0, m.index).split("\n").length;
-      const text = s.split("\n")[line - 1];
-      assert.ok(
-        text.includes("guilds !== null") || text.includes("guilds === null"),
-        `invite-card 第 ${line} 行在没查 null 的情况下解引用了 guilds`,
-      );
-    }
+  it("push-box / guilds：守卫失败时停在加载态，不拿空数组顶替（那是「一个群都没进」）", () => {
+    const s = code(PUSH);
+    const b = between(s, s.indexOf('callApi("/api/guilds")'), s.indexOf("callApi(`/api/events/${id}`)"));
+    const guard = b.indexOf('fieldErrorMessage(r, "guilds", "拉取群列表")');
+    const branch = b.slice(guard, b.indexOf("setGuilds("));
+    assert.ok(!branch.includes("setGuilds("), "守卫分支把 guilds 写成了别的值");
+    assert.ok(s.includes("useState(null)"), "guilds 初值必须是 null（加载态）");
   });
 
   it("全 app/（组件层）不再有裸的 r.data.<字段> 解引用", () => {
     for (const f of THREE) {
-      const s = src(f);
+      const s = code(f);
       for (const m of s.matchAll(/\br\.data(\??)\.(\w+)/g)) {
         const [deref, opt, field] = [m[0], m[1], m[2]];
         if (opt) continue;
         const guard = s.lastIndexOf(`fieldErrorMessage(r, "${field}",`, m.index);
         assert.ok(guard > -1, `${f} 的 ${deref} 是裸解引用：data 可能是 null（2xx + 字面量 null body）`);
       }
+    }
+  });
+
+  it("可选字段一律 ?. ：invite_url / sendable / promotedId / preview", () => {
+    for (const [f, expr] of [
+      [INVITE, "r.data?.invite_url"],
+      [PUSH, "r.data?.invite_url"],
+      [PUSH, "r.data?.sendable"],
+      [EDIT, "r.data?.promotedId"],
+      [PUSH, "r.data?.event"],
+    ]) {
+      assert.ok(code(f).includes(expr), `${f} 的可选字段该用 ?. ：${expr}`);
     }
   });
 });
@@ -197,7 +212,7 @@ describe("SPA-550 AC4：可选字段用 ?. ，不许套 fieldErrorMessage", () =
   });
 
   it("edit-box 用 ?. 读它：没递补是常态，报成失败才是 bug", () => {
-    const s = src(EDIT);
+    const s = code(EDIT);
     assert.ok(s.includes("r.data?.promotedId"), "promotedId 必须用 ?. 读");
     assert.equal(
       guardsOf(EDIT).filter((g) => g.field === "promotedId").length,
@@ -207,7 +222,7 @@ describe("SPA-550 AC4：可选字段用 ?. ，不许套 fieldErrorMessage", () =
   });
 
   it("sendable 同样是可选的：查不到就是「不知道」，不是「不能发」", () => {
-    const s = src(PUSH);
+    const s = code(PUSH);
     assert.ok(s.includes("r.data?.sendable"), "sendable 用 ?. 读");
     assert.equal(
       guardsOf(PUSH).filter((g) => g.field === "sendable").length,
@@ -230,14 +245,14 @@ describe("SPA-550 AC4：可选字段用 ?. ，不许套 fieldErrorMessage", () =
 
 describe("SPA-550 AC5：守卫的消息要真能到用户眼前", () => {
   it("invite-card 的错误块渲染的是 err，不是写死的常量", () => {
-    const s = src(INVITE);
+    const s = code(INVITE);
     const block = between(s, s.indexOf('data-testid="home-invite-error"'), s.indexOf("home-invite-empty"));
     assert.ok(block.includes("{err}"), "错误块写死了 LOAD_ERROR：守卫的话说了也白说");
     assert.ok(!block.includes(">群列表拉取失败"), "错误块里仍有第二处用户可见文案");
   });
 
   it("push-box 的守卫分支把消息挂到 msg（sheet 里的 role=alert）", () => {
-    const s = src(PUSH);
+    const s = code(PUSH);
     assert.ok(s.includes('role="alert"'), "msg 没有渲染成 alert，守卫的话用户看不见");
     const b = body(PUSH, 'callApi("/api/guilds")', "callApi(`/api/events/${id}`)");
     const guard = b.indexOf('fieldErrorMessage(r, "guilds", "拉取群列表")');

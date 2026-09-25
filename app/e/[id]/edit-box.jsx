@@ -102,8 +102,14 @@ export default function EditBox({ id, ev, participants, onDone }) {
         setSnack(apiErrorMessage(r, "移除"));
         return;
       }
+      // promotedId 是可选的：路由只在真的移除时才带这个键（app/api/events/[id]/route.js），
+      // 没人递补时它就是不存在。所以这里用 ?. 而不是 fieldErrorMessage——后者会把
+      // 「本来就没有递补」报成「移除失败」。移除成不成功由 2xx 本身说了算，?.
+      // 保证读它不抛：data 是 null（2xx + 字面量 null body）时，抛点原本在 setRemoved
+      // 之后，名单已经变了、父组件还没刷新、提示条也不出来，状态卡在中间最难查。
+      const promoted = r.data?.promotedId;
       setRemoved([...removed, pendingRemove]);
-      setSnack(r.data.promotedId ? `已移除（排队首位已递补）` : "已移除");
+      setSnack(promoted ? `已移除（排队首位已递补）` : "已移除");
       setPendingRemove(null);
       onDone?.("removed", true); // 刷新父级数据但不关闭编辑
     } finally {
