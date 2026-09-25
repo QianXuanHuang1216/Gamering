@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { pushErrorMessage } from "@/lib/push";
+import { pushErrorMessage, pushOutcome, newPushNonce } from "@/lib/push";
 
 const STEPS = ["选群", "选频道", "确认发送"];
 
@@ -23,8 +23,10 @@ export default function PushBox({ id }) {
   const [preview, setPreview] = useState(null);
   const [msg, setMsg] = useState("");
   const [okMsg, setOkMsg] = useState("");
+  const [outcome, setOutcome] = useState(null);
   const [busy, setBusy] = useState(false);
   const [sentOnce, setSentOnce] = useState(false);
+  const [nonce, setNonce] = useState(null);
 
   useEffect(() => {
     if (!open || guilds !== null) return;
@@ -72,19 +74,31 @@ export default function PushBox({ id }) {
     setStep(2);
   }
 
+  /**
+   * SPA-546：「刚才那一下到底成没成」不再靠猜。
+   * unreadable 落在「卡可能已经进了 Discord」的窗口里，此时「请再试一次」就是在教人
+   * 制造重复卡——改成先查 event_messages（只读接口），按查到的三种结果分别说话。
+   * nonce 随这次发送手势带过去：失败后重发复用它，Discord 侧不会多出一张卡。
+   */
   async function send() {
     setBusy(true);
     setMsg("");
+    setOutcome(null);
     setOkMsg("");
     try {
       const r = await callApi(`/api/events/${id}/push`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel_id: channelId }),
+        body: JSON.stringify({ channel_id: channelId, nonce }),
       });
       if (r.ok) {
         setSentOnce(true);
         setOkMsg(`已发送到 #${channelName}`);
+        // 只有确认成功才换新 nonce：用户主动再发一张是产品承诺的行为，不能被去重吞掉。
+        setNonce(newPushNonce());
+      } else if (r.unreadable) {
+        const v = await callApi(`/api/events/${id}/push?channel_id=${encodeURIComponent(channelId)}`);
+        setOutcome(pushOutcome(v));
       } else {
         setMsg(pushErrorMessage(r));
       }
@@ -99,6 +113,7 @@ export default function PushBox({ id }) {
     setStep(1);
     setMsg("");
     setOkMsg("");
+    setOutcome(null);
   }
 
   function guildIcon(g) {
@@ -195,6 +210,7 @@ export default function PushBox({ id }) {
                         onClick={() => {
                           setChannelId(c.id);
                           setChannelName(c.name);
+                          setNonce(newPushNonce());
                           setStep(3);
                         }}
                       >
@@ -265,6 +281,19 @@ export default function PushBox({ id }) {
             {msg && (
               <p className="t-body-medium" role="alert" style={{ color: "var(--md-sys-color-error)" }}>
                 {msg}
+              </p>
+            )}
+            {outcome && (
+              <p className="t-body-medium" role="status" data-testid="push-outcome" style={{ color: "var(--md-sys-color-on-surface-variant)" }}>
+                {outcome.text}
+                {outcome.url && (
+                  <>
+                    {" · "}
+                    <a href={outcome.url} target="_blank" rel="noreferrer">
+                      在 Discord 里打开
+                    </a>
+                  </>
+                )}
               </p>
             )}
             {okMsg && (
