@@ -261,6 +261,52 @@ describe("SPA-546 P1：查询要问「刚才那一下」，不是「这个频道
   });
 });
 
+describe("SPA-546 review 第 2 轮：nonce 在存储层必须归一", () => {
+  it("整数 nonce 落进去要能查得回来（node:sqlite 的 TEXT 亲和会把 JS 数字存成 \"12345.0\"）", () => {
+    liveEvent("e-int-nonce");
+    addMessage(db, { eventId: "e-int-nonce", guildId: "g", channelId: "c", messageId: "m", nonce: 12345 });
+    const stored = db.prepare("SELECT nonce FROM event_messages WHERE event_id = ? AND message_id = 'm'").get("e-int-nonce").nonce;
+    assert.equal(stored, "12345", `存进去的形式就不对：${JSON.stringify(stored)}`);
+    assert.equal(latestLiveCard(db, "e-int-nonce", "c", { nonce: 12345 })?.message_id, "m");
+  });
+
+  it("字符串 nonce 不受影响（归一不能把两边弄错位）", () => {
+    liveEvent("e-str-nonce");
+    addMessage(db, { eventId: "e-str-nonce", guildId: "g", channelId: "c", messageId: "m", nonce: "12345" });
+    assert.equal(latestLiveCard(db, "e-str-nonce", "c", { nonce: "12345" })?.message_id, "m");
+    assert.equal(latestLiveCard(db, "e-str-nonce", "c", { nonce: 12345 })?.message_id, "m", "两种形式要查到同一张");
+    assert.equal(latestLiveCard(db, "e-str-nonce", "c", { nonce: "999" }), null);
+  });
+
+  it("端到端：整数 nonce 走完 POST → 查询必须说 sent:true（确实在 Discord 里的卡不能永远读成没发出去）", async () => {
+    liveEvent("e-int-e2e");
+    stubDiscord(() => jsonRes(200, { id: "msg-int" }));
+    const post = await pushEvent(mkReq("owner", { channel_id: "chan-1", nonce: 12345 }), { params: { id: "e-int-e2e" } });
+    assert.equal(post.status, 201);
+    const g = await pushRoute.GET(mkGet("owner", "?channel_id=chan-1&nonce=12345"), { params: { id: "e-int-e2e" } });
+    assert.equal((await g.json()).sent, true);
+  });
+
+  it("没有 nonce 的行仍算活卡（老数据 nonce 为 NULL，别被归一顺手滤掉）", () => {
+    liveEvent("e-null-nonce");
+    addMessage(db, { eventId: "e-null-nonce", guildId: "g", channelId: "c", messageId: "m" });
+    assert.equal(latestLiveCard(db, "e-null-nonce", "c")?.message_id, "m", "AC1 字面口径：没有 nonce 也能查");
+    assert.equal(latestLiveCard(db, "e-null-nonce", "c", { nonce: undefined })?.message_id, "m");
+    assert.equal(latestLiveCard(db, "e-null-nonce", "c", { nonce: null })?.message_id, "m", "null = 没带手势，不是手势 nonce 恰好是 null");
+    assert.equal(latestLiveCard(db, "e-null-nonce", "c", { nonce: "anything" }), null, "带手势时老数据不能顶包");
+  });
+
+  it("nonce 为 null 时的兜底要写回 state，否则下一次重发会换一个 nonce", () => {
+    const box = src("app/e/[id]/push-box.jsx");
+    const send = box.slice(box.indexOf("async function send()"), box.indexOf("function close()"));
+    assert.match(
+      send,
+      /nonce === null\) setNonce\(gestureNonce\)/,
+      "兜底 nonce 必须写回 state，「失败后重发复用同一个」才成立",
+    );
+  });
+});
+
 describe("SPA-546 AC2：三种状态三句文案，互不相同", () => {
   it("卡在 → 已经发出去了 + Discord 直链", () => {
     const out = pushLib.pushOutcome({ ok: true, data: { sent: true, message_id: "m1", guild_id: "g9", channel_id: "c1" } });
