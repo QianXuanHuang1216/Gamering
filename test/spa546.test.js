@@ -17,7 +17,7 @@ process.env.DISCORD_BOT_TOKEN = "bot-token";
 
 register("./alias-loader.js", import.meta.url);
 
-const { getDb, createEvent, addMessage, markMessageDead, latestLiveCard } = await import("../lib/db.js");
+const { getDb, createEvent, addMessage, markMessageDead, latestLiveCard, migrate, openDb } = await import("../lib/db.js");
 const { signSession } = await import("../lib/session.js");
 const { sendCard } = await import("../lib/discord-rest.js");
 const pushRoute = await import("../app/api/events/[id]/push/route.js");
@@ -164,6 +164,103 @@ describe("SPA-546 AC1：推送后能查这张卡在不在", () => {
   });
 });
 
+describe("SPA-546 P1：查询要问「刚才那一下」，不是「这个频道以前有没有卡」", () => {
+  it("PM 复现：同频道上一次留下的活卡，不能被当成本次手势的结果", async () => {
+    liveEvent("e-gesture");
+    addMessage(db, { eventId: "e-gesture", guildId: "guild-9", channelId: "chan-1", messageId: "msg-A", nonce: "A" });
+    const mine = await pushRoute.GET(mkGet("owner", "?channel_id=chan-1&nonce=B"), { params: { id: "e-gesture" } });
+    assert.equal(mine.status, 200);
+    const body = await mine.json();
+    assert.equal(body.sent, false, "上一次那张卡不是这一次的结果，说成「发出去了」就是让人少发一张");
+    assert.ok(!("message_id" in body), `sent:false 不该带 message_id：${JSON.stringify(body)}`);
+    const theirs = await pushRoute.GET(mkGet("owner", "?channel_id=chan-1&nonce=A"), { params: { id: "e-gesture" } });
+    assert.equal((await theirs.json()).message_id, "msg-A", "按 nonce 查时要能查回自己那一张");
+  });
+
+  it("端到端：gesture 1 成功 → gesture 2 回程截断（什么都没建）→ 不能被告知「已经发出去了」", async () => {
+    liveEvent("e-gesture-e2e");
+    stubDiscord(() => jsonRes(200, { id: "msg-1" }));
+    const first = await pushEvent(mkReq("owner", { channel_id: "chan-1", nonce: "n1" }), { params: { id: "e-gesture-e2e" } });
+    assert.equal(first.status, 201);
+    // 第二次手势：nonce 已轮换，Discord 侧传输层失败，一张卡都没建。
+    globalThis.fetch = async (url) => {
+      if (url.endsWith("/messages")) throw new TypeError("fetch failed");
+      return jsonRes(200, { id: "chan-1", type: 0, guild_id: "guild-9" });
+    };
+    const second = await pushEvent(mkReq("owner", { channel_id: "chan-1", nonce: "n2" }), { params: { id: "e-gesture-e2e" } });
+    assert.ok(second.status >= 500);
+    const v = await pushRoute.GET(mkGet("owner", "?channel_id=chan-1&nonce=n2"), { params: { id: "e-gesture-e2e" } });
+    const out = pushLib.pushOutcome({ ok: true, data: await v.json() });
+    assert.equal(out.text, pushLib.PUSH_ERROR.notSent, "这一下确实没发出去，该说没发出去");
+    assert.equal(out.url, null, "不能给一个点开是上一次的链接");
+  });
+
+  it("落库要记住这次手势的 nonce，否则查询无从判别", () => {
+    liveEvent("e-gesture-store");
+    addMessage(db, { eventId: "e-gesture-store", guildId: "g", channelId: "c", messageId: "m", nonce: "xyz" });
+    const row = db.prepare("SELECT nonce FROM event_messages WHERE event_id = ? AND message_id = 'm'").get("e-gesture-store");
+    assert.equal(row.nonce, "xyz");
+    assert.equal(latestLiveCard(db, "e-gesture-store", "c", { nonce: "xyz" }).message_id, "m");
+    assert.equal(latestLiveCard(db, "e-gesture-store", "c", { nonce: "other" }), null);
+    assert.equal(latestLiveCard(db, "e-gesture-store", "c").message_id, "m", "不传 nonce 时保留 AC1 字面要求的那条口径");
+  });
+
+  it("老库要能补上 nonce 列（migrate 幂等，不许炸已有部署）", () => {
+    const old = openDb(":memory:");
+    old.exec("ALTER TABLE event_messages DROP COLUMN nonce"); // 装成没这列的老库
+    assert.ok(!old.prepare("PRAGMA table_info(event_messages)").all().some((c) => c.name === "nonce"));
+    migrate(old);
+    const cols = old.prepare("PRAGMA table_info(event_messages)").all().map((c) => c.name);
+    assert.ok(cols.includes("nonce"), `老库补不上 nonce 列：${cols.join(",")}`);
+    migrate(old); // 幂等：再跑一次不许报错
+    addMessage(old, { eventId: "e", guildId: "g", channelId: "c", messageId: "m2", nonce: "n" });
+    assert.equal(latestLiveCard(old, "e", "c", { nonce: "n" }).message_id, "m2");
+    assert.equal(latestLiveCard(old, "e", "c", { nonce: "old" }), null, "老库里的历史行没有手势，不能被当成本次结果");
+  });
+
+  it("查询带了非法 nonce → 400，别把整个查询降级成「历史上有没有卡」", async () => {
+    liveEvent("e-gesture-bad");
+    addMessage(db, { eventId: "e-gesture-bad", guildId: "g", channelId: "c", messageId: "m", nonce: "A" });
+    for (const q of ["?channel_id=c&nonce=", "?channel_id=c&nonce=" + "x".repeat(26)]) {
+      const res = await pushRoute.GET(mkGet("owner", q), { params: { id: "e-gesture-bad" } });
+      assert.equal(res.status, 400, q);
+      assert.ok(isJson(res));
+    }
+  });
+
+  it("前端：查询必须带上这次手势的 nonce（同一个 nonce 既是 POST 的也是 GET 的）", () => {
+    const box = src("app/e/[id]/push-box.jsx");
+    const send = box.slice(box.indexOf("async function send()"), box.indexOf("function close()"));
+    assert.match(send, /nonce \?\? newPushNonce\(\)/, "nonce 为 null 时要就地生成，别让 validNonce 静默当成「没带」");
+    assert.match(send, /JSON\.stringify\(\{[^}]*nonce: gestureNonce/, "POST 要带手势 nonce");
+    assert.match(send, /URLSearchParams\(\{[^}]*nonce: gestureNonce/, "GET 查询也要带同一个 nonce，否则问的还是历史");
+  });
+
+  it("P2-1：nonce 校验失败的用户可见文案也归 PUSH_ERROR 管（不留第二个口子）", async () => {
+    liveEvent("e-nonce-copy");
+    const res = await pushEvent(mkReq("owner", { channel_id: "chan-1", nonce: "x".repeat(26) }), { params: { id: "e-nonce-copy" } });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error, pushLib.PUSH_ERROR.nonceInvalid);
+    const route = src("app/api/events/[id]/push/route.js");
+    assert.ok(!route.includes("nonce 只能"), "路由里不该硬编码用户可见文案");
+  });
+
+  it("P2-2：同一张卡先被摘成死卡、之后又被 enforce_nonce 返回一次 → 要补插回活卡", () => {
+    liveEvent("e-revive");
+    addMessage(db, { eventId: "e-revive", guildId: "g", channelId: "c", messageId: "m", nonce: "n" });
+    const row = db.prepare("SELECT id FROM event_messages WHERE event_id = ? AND message_id = 'm'").get("e-revive");
+    markMessageDead(db, row.id);
+    assert.equal(latestLiveCard(db, "e-revive", "c"), null);
+    addMessage(db, { eventId: "e-revive", guildId: "g", channelId: "c", messageId: "m", nonce: "n" });
+    assert.equal(
+      latestLiveCard(db, "e-revive", "c", { nonce: "n" })?.message_id,
+      "m",
+      "活卡得回来：否则 fanout 从此不再更新这张卡",
+    );
+  });
+});
+
 describe("SPA-546 AC2：三种状态三句文案，互不相同", () => {
   it("卡在 → 已经发出去了 + Discord 直链", () => {
     const out = pushLib.pushOutcome({ ok: true, data: { sent: true, message_id: "m1", guild_id: "g9", channel_id: "c1" } });
@@ -229,7 +326,8 @@ describe("SPA-546 AC2：push-box 在「没收到回复」之后先查库再说�
     const send = sendBody();
     assert.ok(send.includes("if (r.unreadable)"), "没有 unreadable 分支");
     const branch = send.slice(send.indexOf("if (r.unreadable)"), send.indexOf("setMsg(pushErrorMessage(r))"));
-    assert.ok(branch.includes("channel_id="), "unreadable 分支必须查 AC1 的只读接口");
+    assert.ok(branch.includes("URLSearchParams("), "unreadable 分支必须查 AC1 的只读接口");
+    assert.match(branch, /channel_id: channelId/, "查询要指明是哪个频道");
     assert.ok(branch.includes("pushOutcome"), "unreadable 分支必须走 pushOutcome");
     assert.equal(
       (send.match(/setMsg\(pushErrorMessage\(r\)\)/g) ?? []).length,
