@@ -108,6 +108,8 @@ describe("SPA-548 B3：#13 的推送专属语义一根没动", () => {
     assert.equal(pushErrorMessage({ status: 502, data: null }), PUSH_ERROR.transport);
     assert.equal(pushErrorMessage({ status: 429, data: { error: "x" } }), PUSH_ERROR.rateLimited);
     assert.equal(pushErrorMessage({ status: 400, data: { error: "仅支持文字频道" } }), `失败：仅支持文字频道`);
+    assert.equal(pushErrorMessage({ status: 502, data: { error: "换个频道试试" } }), "换个频道试试", "5xx 带可操作提示时照传，不被 transport 覆盖");
+    assert.equal(pushErrorMessage({ status: 400, data: {} }), `失败：${PUSH_ERROR.fallback}`, "4xx 且没有 error → 兜底，不是 transport");
     assert.equal(pushErrorMessage({ ok: true, status: 201, data: {} }), "");
   });
 });
