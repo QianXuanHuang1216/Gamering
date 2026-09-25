@@ -2,7 +2,7 @@ import { getDb, getEvent, addMessage, latestLiveCard } from "@/lib/db";
 import { readSession } from "@/lib/session";
 import { cardPayload } from "@/lib/view";
 import { precheckChannel, sendCard } from "@/lib/discord-rest";
-import { PUSH_ERROR, discordUnreachable, validNonce } from "@/lib/push";
+import { PUSH_ERROR, discordUnreachable, discordRejected, validNonce } from "@/lib/push";
 
 /** POST { channel_id, nonce? }：权限预检 → 发 Components V2 卡 → 存 event_messages。 */
 export async function POST(req, { params }) {
@@ -32,7 +32,21 @@ export async function POST(req, { params }) {
       if (r.transport !== "ok") return discordUnreachable();
       if (r.status === 403) return Response.json({ error: "Bot 在该频道没有发送权限，换个频道试试" }, { status: 502 });
       if (r.status === 429) return Response.json({ error: PUSH_ERROR.rateLimited }, { status: 429 });
-      console.error("push send failed", { eventId: id, channelId: channel_id, status: r.status });
+      // Discord 的 4xx 是确定性的：这份 payload 再发一次还是同一个 4xx，别请人重试。
+      // code 与 errors 一并留下——2026-09-25 那次 400 就是因为这里只记了 status，
+      // 而 Discord 明明在 errors 里点名了 components.0.components.4.content。
+      if (r.status >= 400 && r.status < 500) {
+        console.error("push rejected by discord", {
+          eventId: id,
+          channelId: channel_id,
+          status: r.status,
+          code: r.data?.code,
+          message: r.data?.message,
+          errors: r.data?.errors,
+        });
+        return discordRejected(r.data?.code);
+      }
+      console.error("push send failed", { eventId: id, channelId: channel_id, status: r.status, message: r.data?.message });
       return Response.json({ error: "发送失败，请稍后重试" }, { status: 502 });
     }
     addMessage(db, { eventId: id, guildId: pre.channel.guild_id, channelId: channel_id, messageId: r.data.id, nonce: pushNonce });
