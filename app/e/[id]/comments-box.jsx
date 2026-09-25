@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { apiErrorMessage, callApi } from "@/lib/api-client";
+import { apiErrorMessage, callApi, fieldErrorMessage } from "@/lib/api-client";
 import { COMMENT_MAX, visibleCommentActions } from "@/lib/comments";
 import { avatarUrl } from "@/lib/discord";
 import AvatarImg from "@/app/avatar-img";
@@ -78,6 +78,11 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
         setFailed({ body, parentId, requestId, msg: apiErrorMessage(r, "发送评论") });
         return;
       }
+      const missing = fieldErrorMessage(r, "comment", "发送评论");
+      if (missing) {
+        setFailed({ body, parentId, requestId, msg: missing });
+        return;
+      }
       upsertLocal(r.data.comment);
       setDraft("");
       setReply(null);
@@ -104,6 +109,12 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
       setEditing({ ...editing, busy: false, err: apiErrorMessage(r, "保存评论") });
       return;
     }
+    // busy 必须在这里解开：下面任何一次抛异常都会把编辑框永远留在「保存中」。
+    const missing = fieldErrorMessage(r, "comment", "保存评论");
+    if (missing) {
+      setEditing({ ...editing, busy: false, err: missing });
+      return;
+    }
     const c = r.data.comment;
     setGroups((gs) =>
       (gs ?? []).map((g) => ({
@@ -123,7 +134,9 @@ export default function CommentsBox({ eventId, meId, creatorId, terminal, initia
         setSnack(apiErrorMessage(r, "删除评论"));
         return;
       }
-      if (r.data.kind === "soft") {
+      // 2xx + body 是字面量 null 时 callApi 给的是 { ok: true, data: null }（解析成功，不算 unreadable），
+      // 所以这里只能 ?. —— 不加守卫：{} body 时 undefined === "soft" 为假、走硬删分支，那是既有行为。
+      if (r.data?.kind === "soft") {
         setGroups((gs) =>
           (gs ?? []).map((g) =>
             g.l1.id === deleting.id ? { ...g, l1: { ...g.l1, deleted: true, body: "" } } : g,

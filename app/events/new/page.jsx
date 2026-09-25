@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiErrorMessage, callApi } from "@/lib/api-client";
+import { apiErrorMessage, callApi, fieldErrorMessage } from "@/lib/api-client";
 import { GAME_PRESETS } from "@/lib/games";
 import { defaultStartParts, partsToMs, validateTimes } from "@/lib/edit-validate";
 import DatetimePicker from "@/app/datetime-picker";
@@ -60,6 +60,11 @@ export default function NewEvent() {
         // r.data 为 null 说明响应体读不懂，不能拿它猜是不是没登录。
         if (r.data?.error === "login_required") setNeedsLogin(true);
         else setErr(apiErrorMessage(r, "创建"));
+        return;
+      }
+      const missing = fieldErrorMessage(r, "event", "创建");
+      if (missing) {
+        setErr(missing);
         return;
       }
       setCreatedId(r.data.event.id);
